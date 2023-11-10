@@ -20,6 +20,29 @@ union sockaddr_union {
   sockaddr_in6 addr6;
 };
 
+
+/*
+template<typename T>
+class deferred_init {
+    alignas(T) std::byte data[sizeof(T)];
+    bool init = false;
+
+    auto t() -> T& { return *std::launder(reinterpret_cast<T*>(&data)); }
+
+    template<typename U>
+    friend class out;
+
+    auto destroy() -> void         { if (init) { t().~T(); }  init = false; }
+
+public:
+    deferred_init() noexcept       { }
+   ~deferred_init() noexcept       { destroy(); }
+    auto value()    noexcept -> T& { Default.expects(init);  return t(); }
+
+    auto construct(auto&& ...args) -> void { Default.expects(!init);  new (&data) T{CPP2_FORWARD(args)...};  init = true; }
+};
+*/
+
 using connection_list = boost::intrusive::list<connection_impl>;
 
 inline void list_erase(connection_impl& s, connection_list& from)
@@ -36,9 +59,23 @@ inline void list_transfer(connection_impl& s, connection_list& from,
 
 struct socket_impl : boost::intrusive::list_base_hook<> {
   engine_impl& engine;
-  udp::socket socket;
+  udp::socket socket; /* requirements: close() 
+                      async_wait(wait_type, token)   // /usr/local/include/boost/asio/basic_socket.hpp
+                     boost::asio::ip::udp::endpoint local_endpoint()
+                      native_handle()  // src/socket.cc 
+                      cancel()
+   */
+
+
+
   ssl::context& ssl;
   udp::endpoint local_addr; // socket's bound address
+  /* requirements: data() -> returns asio::basic_endpoint<>::data_type
+                    which is boost::asio::detail::sock_addr_type
+                    which ultimately is a unix    struct sockaddr{ char sa_data[14]; sa_family_t sa_family;}  
+                    (with sa_family_t == unsigned short int )
+  */
+
   boost::circular_buffer<incoming_connection> incoming_connections;
   connection_list accepting_connections;
   connection_list open_connections;

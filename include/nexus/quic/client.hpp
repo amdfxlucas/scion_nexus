@@ -1,5 +1,5 @@
 #pragma once
-
+#include <asio.hpp>
 #include <nexus/udp.hpp>
 #include <nexus/ssl.hpp>
 #include <nexus/quic/detail/engine_impl.hpp>
@@ -16,6 +16,15 @@ class client {
   friend class connection;
   detail::engine_impl engine;
   detail::socket_impl socket;
+
+
+  friend class client_helper;
+  using pan_sock_t = boost::asio::local::datagram_protocol::socket;
+    /// construct the client, taking ownership of a bound UDP socket
+  client( pan_sock_t&& socket, ssl::context& ctx); // TODO: noexcept
+  /// construct the client, taking ownership of a bound UDP socket
+  client( pan_sock_t&& socket, ssl::context& ctx, const settings& s); // TODO: noexcept
+
  public:
   /// the polymorphic executor type, boost::asio::any_io_executor
   using executor_type = detail::engine_impl::executor_type;
