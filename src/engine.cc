@@ -54,7 +54,8 @@ void engine_impl::reschedule(std::unique_lock<std::mutex>& lock)
     // but clients can stop reading
     if (client && client->receiving) {
       client->receiving = false;
-      client->socket.cancel();
+     // client->socket.cancel();
+     client->cancel();
     }
     timer.cancel();
     return;

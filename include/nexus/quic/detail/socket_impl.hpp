@@ -4,6 +4,8 @@
 #include <boost/circular_buffer.hpp>
 #include <nexus/ssl.hpp>
 #include <nexus/quic/detail/connection_impl.hpp>
+#include <asio.hpp>
+#include <variant>
 
 struct lsquic_conn;
 struct lsquic_out_spec;
@@ -21,27 +23,8 @@ union sockaddr_union {
 };
 
 
-/*
-template<typename T>
-class deferred_init {
-    alignas(T) std::byte data[sizeof(T)];
-    bool init = false;
 
-    auto t() -> T& { return *std::launder(reinterpret_cast<T*>(&data)); }
-
-    template<typename U>
-    friend class out;
-
-    auto destroy() -> void         { if (init) { t().~T(); }  init = false; }
-
-public:
-    deferred_init() noexcept       { }
-   ~deferred_init() noexcept       { destroy(); }
-    auto value()    noexcept -> T& { Default.expects(init);  return t(); }
-
-    auto construct(auto&& ...args) -> void { Default.expects(!init);  new (&data) T{CPP2_FORWARD(args)...};  init = true; }
-};
-*/
+ using pan_sock_t = boost::asio::local::datagram_protocol::socket;
 
 using connection_list = boost::intrusive::list<connection_impl>;
 
@@ -59,7 +42,8 @@ inline void list_transfer(connection_impl& s, connection_list& from,
 
 struct socket_impl : boost::intrusive::list_base_hook<> {
   engine_impl& engine;
-  udp::socket socket; /* requirements: close() 
+  std::variant<udp::socket,pan_sock_t> socket; 
+  /* requirements: close() 
                       async_wait(wait_type, token)   // /usr/local/include/boost/asio/basic_socket.hpp
                      boost::asio::ip::udp::endpoint local_endpoint()
                       native_handle()  // src/socket.cc 
@@ -81,13 +65,15 @@ struct socket_impl : boost::intrusive::list_base_hook<> {
   connection_list open_connections;
   bool receiving = false;
 
-  socket_impl(engine_impl& engine, udp::socket&& socket,
-              ssl::context& ssl);
+  socket_impl(engine_impl& engine, udp::socket&& socket, ssl::context& ssl);
+  socket_impl(engine_impl& engine, pan_sock_t&& socket, ssl::context& ssl);
   socket_impl(engine_impl& engine, const udp::endpoint& endpoint,
               bool is_server, ssl::context& ssl);
   ~socket_impl() {
     close();
   }
+
+  void cancel();
 
   using executor_type = boost::asio::any_io_executor;
   executor_type get_executor() const;

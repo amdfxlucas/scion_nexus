@@ -1,5 +1,5 @@
 #pragma once
-#include <asio.hpp>
+
 #include <nexus/udp.hpp>
 #include <nexus/ssl.hpp>
 #include <nexus/quic/detail/engine_impl.hpp>
@@ -10,6 +10,12 @@ namespace nexus::quic {
 class connection;
 class stream;
 
+class client_helper
+{
+public:
+};
+
+
 /// a generic QUIC client that owns a UDP socket and uses it to service client
 /// connections
 class client {
@@ -19,7 +25,7 @@ class client {
 
 
   friend class client_helper;
-  using pan_sock_t = boost::asio::local::datagram_protocol::socket;
+ 
     /// construct the client, taking ownership of a bound UDP socket
   client( pan_sock_t&& socket, ssl::context& ctx); // TODO: noexcept
   /// construct the client, taking ownership of a bound UDP socket

@@ -40,12 +40,35 @@ static udp::socket bind_socket(const boost::asio::any_io_executor& ex,
   return socket;
 }
 
+#define SockToPtr() std::get_if<udp::socket>(this->socket) ? std::get_if<udp::socket>(this->socket) : std::get_if<pan_sock_t>(this->socket)
+
+void socket_impl::cancel()
+{
+/*  if( auto usock =  std::get_if<udp::socket>(socket) )
+  {
+    usock->cancel();
+  } else if( auto psock = std::get_if<pan_sock_t>(socket) )
+  {
+    psock->cancel();
+  }
+*/
+SockToPtr()->cancel();
+}
+
 socket_impl::socket_impl(engine_impl& engine, udp::socket&& socket,
                          ssl::context& ssl)
     : engine(engine),
       socket(std::move(socket)),
       ssl(ssl),
-      local_addr(this->socket.local_endpoint())
+      local_addr( SockToPtr()->local_endpoint())
+{}
+
+socket_impl::socket_impl(engine_impl& engine, pan_sock_t&& socket,
+                         ssl::context& ssl)
+    : engine(engine),
+      socket(std::move(socket)),
+      ssl(ssl),
+      local_addr(SockToPtr()->local_endpoint())
 {}
 
 socket_impl::socket_impl(engine_impl& engine, const udp::endpoint& endpoint,
@@ -53,7 +76,7 @@ socket_impl::socket_impl(engine_impl& engine, const udp::endpoint& endpoint,
     : engine(engine),
       socket(bind_socket(engine.get_executor(), endpoint, is_server)),
       ssl(ssl),
-      local_addr(this->socket.local_endpoint())
+      local_addr(SockToPtr()->local_endpoint())
 {
 }
 
@@ -161,7 +184,8 @@ void socket_impl::close()
   // send any CONNECTION_CLOSE frames before closing the socket
   engine.process(lock);
   receiving = false;
-  socket.close();
+//  socket.close();
+SockToPtr()->close();
 }
 
 void socket_impl::start_recv()
@@ -170,7 +194,7 @@ void socket_impl::start_recv()
     return;
   }
   receiving = true;
-  socket.async_wait(udp::socket::wait_read,
+  SockToPtr()->async_wait(socket_base::wait_read, 
       [this] (error_code ec) {
         receiving = false;
         if (!ec) {
@@ -260,14 +284,14 @@ auto socket_impl::send_packets(const lsquic_out_spec* begin,
     }
 
     // TODO: send all at once with sendmmsg()
-    if (::sendmsg(socket.native_handle(), &msg, 0) == -1) {
+    if (::sendmsg(SockToPtr()->native_handle(), &msg, 0) == -1) {
       ec.assign(errno, system_category());
       if (ec == errc::resource_unavailable_try_again ||
           ec == errc::operation_would_block) {
         // lsquic won't call our send_packets() callback again until we call
         // lsquic_engine_send_unsent_packets()
         // wait for the socket to become writeable again, so we can call that
-        socket.async_wait(udp::socket::wait_write,
+        SockToPtr()->async_wait(socket_base::wait_write,
             [this] (error_code ec) {
               if (!ec) {
                 on_writeable();
@@ -306,7 +330,7 @@ size_t socket_impl::recv_packet(iovec iov, udp::endpoint& peer,
   msg.msg_control = control.data();
   msg.msg_controllen = control.size();
 
-  const auto bytes = ::recvmsg(socket.native_handle(), &msg, 0);
+  const auto bytes = ::recvmsg(SockToPtr()->native_handle(), &msg, 0);
   if (bytes == -1) {
     ec.assign(errno, system_category());
     return 0;
