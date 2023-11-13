@@ -1,3 +1,4 @@
+#include <nexus/quic/server.hpp>
 #include <nexus/h3/server.hpp>
 #include <nexus/h3/stream.hpp>
 #include <nexus/quic/connection.hpp>
@@ -25,12 +26,15 @@ void server::close()
   engine.close();
 }
 
-acceptor::acceptor(server& s, udp::socket&& socket, ssl::context& ctx)
+
+
+
+acceptor::acceptor( server& s, udp::socket&& socket, ssl::context& ctx)
     : impl(s.engine, std::move(socket), ctx)
 {}
 
-acceptor::acceptor(server& s, const udp::endpoint& endpoint,
-                   ssl::context& ctx)
+
+acceptor::acceptor(server& s, const udp::endpoint& endpoint, ssl::context& ctx)
     : impl(s.engine, endpoint, true, ctx)
 {}
 
@@ -70,6 +74,48 @@ void acceptor::close()
 {
   impl.close();
 }
+
+ 
+/*leave socket variant as empty monostate 
+i can not yet call prepare_scion_XXXX here because i dont know if it is a client or server's socket_impl
+*/
+scion_acceptor::scion_acceptor(server& s, const udp::endpoint& local_endpoint, ssl::context& ctx)
+: acceptor( s, ctx,local_endpoint )
+
+{
+
+}
+
+/*
+
+
+scion_acceptor::scion_acceptor(server&s , detail::pan_sock_t&& socket, ssl::context& ctx, const udp::endpoint& endpoint )
+// : impl(s.engine, std::move(socket),ctx, endpoint )
+: acceptor( s,ctx)
+{
+
+}
+
+scion_acceptor::scion_acceptor( server&s , detail::pan_sock_t&& socket, ssl::context& ctx, const udp::endpoint& endpoint )
+: impl( s.engine,socket, ctx, endpoint )
+{
+
+}
+*/
+
+void scion_acceptor::listen(int backlog )
+{
+  impl.prepare_scion_server( [&](const system::error_code& )
+                    {
+                      acceptor::listen(backlog);                  
+                    }
+
+  );
+
+ // acceptor::listen(backlog);
+}
+
+
 
 } // namespace quic
 

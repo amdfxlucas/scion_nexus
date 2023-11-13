@@ -2,10 +2,44 @@
 #include <nexus/quic/detail/engine_impl.hpp>
 #include <nexus/quic/detail/socket_impl.hpp>
 #include <array>
+#include <format>
 #include <cstring>
 
 #include <netinet/ip.h>
 #include <lsquic.h>
+
+#include <cstdlib>
+
+#include <iostream>
+//#include <dirent.h>
+//#include <sys/types.h>
+#include "pan.hpp"
+
+using namespace std;
+namespace {
+
+/*int count_dir_entries(const char *path) 
+{
+   struct dirent *entry;
+   DIR *dir = opendir(path);
+   
+   if (dir == NULL) {
+      return;
+   }
+   int entry_count =0;
+   while ((entry = readdir(dir)) != NULL) {
+   ++entry_count;
+   }
+   closedir(dir);
+   return entry_count;
+}*/
+
+
+
+}
+
+//   list_dir("/home/username/Documents");
+
 
 namespace nexus::quic {
 
@@ -40,44 +74,57 @@ static udp::socket bind_socket(const boost::asio::any_io_executor& ex,
   return socket;
 }
 
-#define SockToPtr() std::get_if<udp::socket>(this->socket) ? std::get_if<udp::socket>(this->socket) : std::get_if<pan_sock_t>(this->socket)
 
 void socket_impl::cancel()
 {
-/*  if( auto usock =  std::get_if<udp::socket>(socket) )
+  if( auto usock =  std::get_if<udp::socket>(&socket) )
   {
     usock->cancel();
-  } else if( auto psock = std::get_if<pan_sock_t>(socket) )
+  } else if( auto psock = std::get_if<pan_sock_t>(&socket) )
   {
     psock->cancel();
   }
-*/
-SockToPtr()->cancel();
+
+//SockToPtr()->cancel();
 }
 
-socket_impl::socket_impl(engine_impl& engine, udp::socket&& socket,
+socket_impl::socket_impl(engine_impl& engine, udp::socket&& sock,
                          ssl::context& ssl)
     : engine(engine),
-      socket(std::move(socket)),
+      socket(std::move(sock)),
       ssl(ssl),
-      local_addr( SockToPtr()->local_endpoint())
-{}
+      m_signals(get_executor(),SIGINT)
+  //    local_addr( SockToPtr()->local_endpoint())
+{
+  if( auto usock =  std::get_if<udp::socket>(&socket) )
+  {
+   local_addr = usock->local_endpoint();
+  }
+  
+   m_signals.async_wait( std::bind(&socket_impl::cancel_on_signal, this, std::placeholders::_1, std::placeholders::_2) );
+}
 
 socket_impl::socket_impl(engine_impl& engine, pan_sock_t&& socket,
-                         ssl::context& ssl)
+                         ssl::context& ssl, const udp::endpoint& endpoint)
     : engine(engine),
       socket(std::move(socket)),
       ssl(ssl),
-      local_addr(SockToPtr()->local_endpoint())
-{}
+      m_signals(get_executor(),SIGINT),
+      local_addr( endpoint )
+{
+   m_signals.async_wait( std::bind(&socket_impl::cancel_on_signal, this, std::placeholders::_1, std::placeholders::_2) );
+}
 
 socket_impl::socket_impl(engine_impl& engine, const udp::endpoint& endpoint,
                          bool is_server, ssl::context& ssl)
     : engine(engine),
       socket(bind_socket(engine.get_executor(), endpoint, is_server)),
       ssl(ssl),
-      local_addr(SockToPtr()->local_endpoint())
+      local_addr( endpoint ),
+      m_signals(get_executor(),SIGINT)
 {
+  //socket.get<udp::socket>.local_end
+   m_signals.async_wait( std::bind(&socket_impl::cancel_on_signal, this, std::placeholders::_1, std::placeholders::_2) );
 }
 
 socket_impl::executor_type socket_impl::get_executor() const
@@ -92,16 +139,150 @@ void socket_impl::listen(int backlog)
   start_recv();
 }
 
+void socket_impl::cancel_on_signal(const system::error_code& error, int signal)
+    {
+        if (error) {
+            std::cerr << "ASIO error: " << error.message() << std::endl;
+            return;
+        }
+
+        if (signal == SIGINT) {
+            close();
+        }
+    }
+
+
+std::string socket_impl::local_address()const
+{
+    std::string local = local_endpoint().address().to_string()+":" +std::to_string( local_endpoint().port() );
+    return local;
+}
+
+void socket_impl::prepare_scion_client(const Pan::udp::Endpoint& remote, 
+                                        std::function< void (const system::error_code& err )> on_connected )
+{
+  m_conn = std::make_shared<Pan::udp::Conn>();
+  // m_conn_adapter = std::make_shared<Pan::udp::ConnSockAdapter>();
+  socket = pan_sock_t( get_executor());
+
+  using namespace std::placeholders;
+  using asio::local::datagram_protocol;
+
+      auto rnd = rand();
+        m_go_path = std::format( "/tmp/scion_async_client_go_{}.sock", rnd );
+        m_path =  std::format( "/tmp/scion_async_client_{}.sock",rnd );
+
+     
+        m_conn->dial(local_address().c_str(),         remote);
+
+        std::get<pan_sock_t>(socket).open();
+
+        // std::remove(m_path);
+        std::get<pan_sock_t>(socket).bind(datagram_protocol::endpoint(m_path));
+        m_conn_adapter = std::make_shared<Pan::udp::ConnSockAdapter>( m_conn->createSockAdapter(m_go_path.c_str(), m_path.c_str() ) );
+
+        
+        std::get<pan_sock_t>(socket).async_connect(
+            datagram_protocol::endpoint(m_go_path),
+           on_connected
+            // std::bind(&Client::connected, this, _1)
+            );
+
+        //ioContext.run();
+        // socket.close();
+        // adapter.close();
+        // std::remove(socketPath);
+     
+    
+
+    /*void connected(const system::error_code& error)
+    {
+        using namespace std::placeholders;
+
+        if (error) {
+            std::cerr << "ASIO error: " << error.message() << std::endl;
+            return;
+        }
+
+      //  socket.async_send(asio::buffer(buffer), std::bind(&Client::sent, this, _1, _2));
+    }
+*/
+}
+
+void socket_impl::prepare_scion_server( std::function< void (const system::error_code& err )> on_connected)
+{
+  m_listen_conn = std::make_shared<Pan::udp::ListenConn>();
+
+int rnd = rand();
+        m_go_path = std::format( "/tmp/scion_async_server_go_{}.sock", rnd );
+        m_path =  std::format( "/tmp/scion_async_server_{}.sock",rnd );
+
+  m_listen_conn->listen( local_address().c_str() );
+
+using asio::local::datagram_protocol;
+  socket =  datagram_protocol::socket(get_executor() );
+
+ std::get<pan_sock_t>(socket).open();
+        // std::remove(socketPath);
+        
+      std::get<pan_sock_t>(socket).bind(datagram_protocol::endpoint(m_path.c_str() ) );
+
+  m_listen_sock_adapter = std::make_shared<Pan::udp::ListenSockAdapter>( m_listen_conn->createSockAdapter(m_go_path.c_str(), m_path.c_str() ) );
+
+
+   
+        
+
+        
+        
+
+       std::get<pan_sock_t>( socket).async_connect(
+            datagram_protocol::endpoint( m_go_path.c_str() ),
+            //std::bind(&Server::connected, this, std::placeholders::_1)
+              on_connected
+            // std::bind(&Client::connected, this, _1)
+            
+            );
+
+        // m_signals.async_wait(std::bind(&Server::cancel, this, std::placeholders::_1, std::placeholders::_2));
+
+//        ioContext.run();
+
+  //      socket.close();
+   //     adapter.close();
+        // std::remove( m_path );
+
+
+}
+
+void socket_impl::connect(connection_impl& c,
+                          const Pan::udp::Endpoint& endpoint,
+                          const char* hostname)
+{
+  prepare_scion_client(endpoint,[&]( const system::error_code&)
+  {
+    connect_impl(c, std::get<pan_sock_t>(socket).local_endpoint().data() ,hostname);
+  }
+  );
+
+// connect_impl(c, std::get<pan_sock_t>(socket).local_endpoint().data() ,hostname);
+}
+
 void socket_impl::connect(connection_impl& c,
                           const udp::endpoint& endpoint,
                           const char* hostname)
+{
+  connect_impl(c,endpoint.data(),hostname);
+}
+
+void socket_impl::connect_impl( connection_impl& c, const sockaddr* endpoint, const char* hostname )
 {
   assert(&c.socket == this);
   auto lock = std::unique_lock{engine.mutex};
   auto peer_ctx = this;
   auto cctx = reinterpret_cast<lsquic_conn_ctx_t*>(&c);
   ::lsquic_engine_connect(engine.handle.get(), N_LSQVER,
-      local_addr.data(), endpoint.data(), peer_ctx, cctx,
+      local_addr.data(), endpoint, peer_ctx, cctx,
       hostname, 0, nullptr, 0, nullptr, 0);
   // note, this assert triggers with some quic versions that don't allow
   // multiple connections on the same address, see lquic's hash_conns_by_addr()
@@ -185,7 +366,24 @@ void socket_impl::close()
   engine.process(lock);
   receiving = false;
 //  socket.close();
-SockToPtr()->close();
+//SockToPtr()->close();
+
+  if( auto usock =  std::get_if<udp::socket>(&socket) )
+  {
+    usock->close();
+  } else if( auto psock = std::get_if<pan_sock_t>(&socket) )
+  {
+    psock->close();
+  }
+
+  if(m_conn){m_conn->close();}
+  if(m_conn_adapter){m_conn_adapter->close(); }
+  if(m_listen_conn){m_listen_conn->close();}
+  if(m_listen_sock_adapter){m_listen_sock_adapter->close(); }
+
+  if(!m_path.empty() ){std::remove(m_path.c_str() );}
+  // if(!m_go_path.empty() ){std::remove(m_go_path);}
+
 }
 
 void socket_impl::start_recv()
@@ -194,13 +392,23 @@ void socket_impl::start_recv()
     return;
   }
   receiving = true;
-  SockToPtr()->async_wait(socket_base::wait_read, 
-      [this] (error_code ec) {
+
+  auto cb =  [this] (error_code ec) {
         receiving = false;
         if (!ec) {
           on_readable();
         } // XXX: else fatal? retry?
-      });
+      };
+
+  if( auto usock =  std::get_if<udp::socket>(&socket) )
+  {
+    usock->async_wait(boost::asio::socket_base::wait_read, cb     );
+  } else if( auto psock = std::get_if<pan_sock_t>(&socket) )
+  {
+    psock->async_wait( boost::asio::socket_base::wait_read, cb     );
+  }
+
+  
 }
 
 void socket_impl::on_readable()
@@ -283,20 +491,39 @@ auto socket_impl::send_packets(const lsquic_out_spec* begin,
       msg.msg_control = nullptr;
     }
 
+  int nhandle;
+  if( auto usock =  std::get_if<udp::socket>(&socket) )
+  {
+    nhandle = usock->native_handle();
+  } else if( auto psock = std::get_if<pan_sock_t>(&socket) )
+  {
+    nhandle = psock->native_handle();
+  }
+
     // TODO: send all at once with sendmmsg()
-    if (::sendmsg(SockToPtr()->native_handle(), &msg, 0) == -1) {
+    if (::sendmsg(nhandle, &msg, 0) == -1) {
       ec.assign(errno, system_category());
       if (ec == errc::resource_unavailable_try_again ||
           ec == errc::operation_would_block) {
         // lsquic won't call our send_packets() callback again until we call
         // lsquic_engine_send_unsent_packets()
         // wait for the socket to become writeable again, so we can call that
-        SockToPtr()->async_wait(socket_base::wait_write,
-            [this] (error_code ec) {
+
+        auto cb =     [this] (error_code ec) {
               if (!ec) {
                 on_writeable();
               } // else fatal?
-            });
+            };
+ if( auto usock =  std::get_if<udp::socket>(&socket) )
+  {
+    usock->async_wait( boost::asio::socket_base::wait_write,   cb);
+  } else if( auto psock = std::get_if<pan_sock_t>(&socket) )
+  {
+    psock->async_wait( boost::asio::socket_base::wait_write,   cb);
+  }
+
+
+        
         errno = ec.value(); // lsquic needs to see this errno
       }
       break;
@@ -330,7 +557,16 @@ size_t socket_impl::recv_packet(iovec iov, udp::endpoint& peer,
   msg.msg_control = control.data();
   msg.msg_controllen = control.size();
 
-  const auto bytes = ::recvmsg(SockToPtr()->native_handle(), &msg, 0);
+int nhandle;
+  if( auto usock =  std::get_if<udp::socket>(&socket) )
+  {
+    nhandle = usock->native_handle();
+  } else if( auto psock = std::get_if<pan_sock_t>(&socket) )
+  {
+    nhandle = psock->native_handle();
+  }
+
+  const auto bytes = ::recvmsg(nhandle, &msg, 0);
   if (bytes == -1) {
     ec.assign(errno, system_category());
     return 0;

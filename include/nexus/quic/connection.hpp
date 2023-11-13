@@ -7,6 +7,7 @@ namespace nexus::quic {
 
 class acceptor;
 class client;
+class scion_client;
 class stream;
 
 /// a generic QUIC connection that can initiate outgoing streams and accept
@@ -14,6 +15,7 @@ class stream;
 class connection {
   friend class acceptor;
   friend class client;
+  friend class scion_client;
   friend class stream;
   friend class detail::socket_impl;
   detail::connection_impl impl;

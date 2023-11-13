@@ -4,8 +4,9 @@
 #include <boost/circular_buffer.hpp>
 #include <nexus/ssl.hpp>
 #include <nexus/quic/detail/connection_impl.hpp>
-#include <asio.hpp>
+#include <boost/asio.hpp>
 #include <variant>
+#include "pan.hpp"
 
 struct lsquic_conn;
 struct lsquic_out_spec;
@@ -42,7 +43,15 @@ inline void list_transfer(connection_impl& s, connection_list& from,
 
 struct socket_impl : boost::intrusive::list_base_hook<> {
   engine_impl& engine;
-  std::variant<udp::socket,pan_sock_t> socket; 
+  std::variant<std::monostate,udp::socket,pan_sock_t> socket; 
+  asio::signal_set m_signals;
+
+  std::shared_ptr<Pan::udp::ListenConn > m_listen_conn;
+  std::shared_ptr<Pan::udp::ListenSockAdapter> m_listen_sock_adapter;
+  std::shared_ptr<Pan::udp::Conn> m_conn;
+  std::shared_ptr<Pan::udp::ConnSockAdapter> m_conn_adapter;
+
+
   /* requirements: close() 
                       async_wait(wait_type, token)   // /usr/local/include/boost/asio/basic_socket.hpp
                      boost::asio::ip::udp::endpoint local_endpoint()
@@ -64,11 +73,22 @@ struct socket_impl : boost::intrusive::list_base_hook<> {
   connection_list accepting_connections;
   connection_list open_connections;
   bool receiving = false;
+  std::string m_go_path;
+  std::string m_path;
+
+  socket_impl( engine_impl& e,ssl::context& s )
+  :engine(e),ssl(s) ,m_signals(get_executor(),SIGINT) {}
+
+  socket_impl( engine_impl& e,ssl::context& s , const udp::endpoint& local )
+  :engine(e),ssl(s) ,
+  m_signals(get_executor(),SIGINT),
+  local_addr(local) {}
+
 
   socket_impl(engine_impl& engine, udp::socket&& socket, ssl::context& ssl);
-  socket_impl(engine_impl& engine, pan_sock_t&& socket, ssl::context& ssl);
-  socket_impl(engine_impl& engine, const udp::endpoint& endpoint,
-              bool is_server, ssl::context& ssl);
+  socket_impl(engine_impl& engine, pan_sock_t&& socket, ssl::context& ssl, const udp::endpoint& endpoint );
+
+  socket_impl(engine_impl& engine, const udp::endpoint& endpoint,  bool is_server, ssl::context& ssl);
   ~socket_impl() {
     close();
   }
@@ -79,12 +99,30 @@ struct socket_impl : boost::intrusive::list_base_hook<> {
   executor_type get_executor() const;
 
   udp::endpoint local_endpoint() const { return local_addr; }
+  std::string local_address()const ;
 
   void listen(int backlog);
+
+  void prepare_scion_server( std::function< void (const system::error_code& err )> on_connected= [](const system::error_code&  ){} );
+  void prepare_scion_client( const Pan::udp::Endpoint& remote,
+                            std::function< void (const system::error_code& err )> on_connected =
+                             [](const system::error_code&  ){}  );
 
   void connect(connection_impl& c,
                const udp::endpoint& endpoint,
                const char* hostname);
+
+  void connect( connection_impl&c ,
+                const Pan::udp::Endpoint& endpoint,
+                const char* hostname );
+
+                void connect_impl( connection_impl&c ,
+                const sockaddr* endpoint,
+                const char* hostname );
+
+  void cancel_on_signal( const system::error_code&code, int signal );
+
+
   void on_connect(connection_impl& c, lsquic_conn* conn);
 
   void accept(connection_impl& c, accept_operation& op);
