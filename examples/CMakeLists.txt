@@ -1,3 +1,4 @@
+set(CMAKE_CXX_STANDARD 20 )
 add_subdirectory(echo)
 
 add_executable(h3cli h3cli.cc)

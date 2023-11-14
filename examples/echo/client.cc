@@ -86,18 +86,19 @@ void write_file(stream_ptr stream)
   auto& data = stream->writebuf;
   stream->input.read(data.data(), data.size());
   const auto bytes = stream->input.gcount();
-
-  std::cout << "gcount: " << bytes << std::endl;
+  
+ //  std::cout << "gcount: " << bytes << std::endl;
 
   // write to stream
   auto& s = stream->stream;
   boost::asio::async_write(s, boost::asio::buffer(data.data(), bytes),
-    [stream=std::move(stream)] (error_code ec, size_t bytes) {
+    [stream=std::move(stream)] (error_code ec, size_t bytes_written ) {
     //  [&stream] (error_code ec, size_t bytes) {
       if (ec) {
         std::cerr << "async_write failed with " << ec.message() 
-        << " bytes: " << bytes  << '\n';
+        << " bytes: " << bytes_written  << '\n';
       } else if (!stream->input) { // no more input, done writing
+        std::cout << "<< No more input ! >>" << std::endl;
         stream->stream.shutdown(1);
       } else {
         write_file(std::move(stream));
@@ -111,16 +112,17 @@ void read_file(stream_ptr stream)
   auto& data = stream->readbuf;
   auto& s = stream->stream;
   s.async_read_some(boost::asio::buffer(data),
-    [stream=std::move(stream)] (error_code ec, size_t bytes) {
+    [stream=std::move(stream)] (error_code ec, size_t bytes_read) {
       if (ec) {
         if (ec != nexus::quic::stream_error::eof) {
           std::cerr << "async_read_some returned " << ec.message() << '\n';
         }
         return;
       }
+     // std::cout << "read bytes: " << bytes << std::endl;
       // write the output bytes then start reading more
       auto& data = stream->readbuf;
-      stream->output.write(data.data(), bytes);
+      stream->output.write(data.data(), bytes_read);
       read_file(std::move(stream));
     });
 }
@@ -147,7 +149,10 @@ int main(int argc, char** argv)
   const unsigned char alpn[] = {4,'e','c','h','o'};
   ::SSL_CTX_set_alpn_protos(ssl.native_handle(), alpn, sizeof(alpn));
 
-  ssl.set_verify_mode( boost::asio::ssl::verify_none );
+  // ssl.set_verify_mode( boost::asio::ssl::verify_none );
+  boost::system::error_code ec;
+  ssl.load_verify_file(   "rootCA.crt",    ec);
+  if(ec) throw std::runtime_error("CA file not found");
 
   auto global = nexus::global::init_client();
   std::shared_ptr<nexus::quic::client> client;
@@ -167,7 +172,8 @@ int main(int argc, char** argv)
   for (auto f = cfg.files_begin; f != cfg.files_end; ++f) {
     auto s = stream_ptr{new echo_stream(conn, *f, std::cout)};
     auto& stream = s->stream;
-    conn->conn.async_connect(stream, [s=std::move(s)] (error_code ec) {
+    conn->conn.async_connect(stream,    
+     [s=std::move(s)] (error_code ec) {
         if (ec) {
           std::cerr << "async_connect failed with " << ec.message() << '\n';
           return;

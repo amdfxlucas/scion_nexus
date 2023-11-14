@@ -37,17 +37,21 @@
             ]
         },
         {
+            //  ./nexus_echo_server localhost 3333 server.crt server.key false
+
+            // ./nexus_echo_client localhost 3333 false aa.txt bb.txt
             "name": "(gdb) Launch server",
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/examples/echo/nexus_echo_server",
             "args": ["localhost",
                     "3333",
-                "",
-                "",
+                "server.crt",
+                "server.key",
             "false"],
             "stopAtEntry": true,
-            "cwd": "${fileDirname}",
+            "cwd": "${workspaceFolder}/build/examples/echo",
+            //"${fileDirname}",
             "environment": [],
             "externalConsole": false,
             "MIMode": "gdb",

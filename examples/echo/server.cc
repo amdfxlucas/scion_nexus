@@ -10,6 +10,8 @@
 #include <nexus/quic/server.hpp>
 #include <nexus/quic/settings.hpp>
 #include <nexus/quic/stream.hpp>
+#include <ranges>
+#include <iterator>
 
 // echo server that accepts connections and their streams, writing back
 // anything it reads on each stream
@@ -99,7 +101,7 @@ void on_stream_write(std::unique_ptr<echo_stream> s,
                      error_code ec, size_t bytes);
 
 void on_stream_read(std::unique_ptr<echo_stream> s,
-                    error_code ec, size_t bytes)
+                    error_code ec, size_t bytes_read)
 {
   auto& stream = s->stream;
   if (ec == nexus::quic::stream_error::eof) {
@@ -120,14 +122,20 @@ void on_stream_read(std::unique_ptr<echo_stream> s,
   }
   // echo the buffer back to the client
   auto& data = s->buffer;
-  boost::asio::async_write(stream, boost::asio::buffer(data.data(), bytes),
-    [s=std::move(s)] (error_code ec, size_t bytes) mutable {
-      on_stream_write(std::move(s), ec, bytes);
+  boost::asio::async_write(stream, boost::asio::buffer(data.data(), bytes_read),
+    [s=std::move(s)] (error_code ec, size_t bytes_written) mutable {
+
+     // std::cout <<"wrote: \"" ;
+      std::ranges::copy(  s->buffer|std::ranges::views::take(bytes_written) ,
+      std::ostream_iterator<char>(std::cout, "") );
+    //  std::cout << "\""<< std::endl;
+
+      on_stream_write(std::move(s), ec, bytes_written);
     });
 }
 
 void on_stream_write(std::unique_ptr<echo_stream> s,
-                     error_code ec, size_t bytes)
+                     error_code ec, size_t bytes_written)
 {
   if (ec) {
     std::cerr << "write failed with " << ec.message() << '\n';
@@ -136,9 +144,15 @@ void on_stream_write(std::unique_ptr<echo_stream> s,
   // read the next buffer from the client
   auto& stream = s->stream;
   auto& data = s->buffer;
-  stream.async_read_some(boost::asio::buffer(data),
-    [s=std::move(s)] (error_code ec, size_t bytes) mutable {
-      on_stream_read(std::move(s), ec, bytes);
+  stream.async_read_some( boost::asio::buffer(data.data(),bytes_written ), // boost::asio::buffer(data),
+    [s=std::move(s)] (error_code ec, size_t bytes_read) mutable {
+
+  //    std::cout <<"read: \"" ;
+      std::ranges::copy(  s->buffer|std::ranges::views::take(bytes_read) ,
+      std::ostream_iterator<char>(std::cout, "") );
+  //    std::cout << "\""<< std::endl;
+
+      on_stream_read(std::move(s), ec, bytes_read);
     });
 }
 
@@ -153,6 +167,7 @@ void accept_streams(connection_ptr c)
         std::cerr << "stream accept failed with " << ec.message() << '\n';
         return;
       }
+      std::cout << "server about to accept stream" << std::endl;
       // start next accept
       accept_streams(std::move(c));
       // start reading from stream
