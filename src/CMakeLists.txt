@@ -40,7 +40,7 @@ set(nexus-srcs
 add_library(nexus ${nexus-srcs})
 target_link_libraries(nexus PUBLIC nexus-headers lsquic pancpp pan::pan
 #Boost::asio
-#${Boost_LIBRARIES}
+${Boost_LIBRARIES}
 Boost::system
 Boost::thread
 

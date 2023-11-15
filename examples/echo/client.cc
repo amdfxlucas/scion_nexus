@@ -52,6 +52,11 @@ struct echo_connection : ref_counter<echo_connection> {
   nexus::quic::client* client;
   nexus::quic::connection conn;
 
+  echo_connection(nexus::quic::client* client)
+  : client(client),
+  conn(*client)
+   {}
+
   echo_connection( nexus::quic::client* client,
                   const udp::endpoint& endpoint,
                   const char* hostname)
@@ -92,6 +97,7 @@ void write_file(stream_ptr stream)
   // write to stream
   auto& s = stream->stream;
   boost::asio::async_write(s, boost::asio::buffer(data.data(), bytes),
+                              boost::asio::transfer_at_least(1),
     [stream=std::move(stream)] (error_code ec, size_t bytes_written ) {
     //  [&stream] (error_code ec, size_t bytes) {
       if (ec) {
@@ -112,6 +118,7 @@ void read_file(stream_ptr stream)
   auto& data = stream->readbuf;
   auto& s = stream->stream;
   s.async_read_some(boost::asio::buffer(data),
+                //  boost::asio::transfer_at_least(1),
     [stream=std::move(stream)] (error_code ec, size_t bytes_read) {
       if (ec) {
         if (ec != nexus::quic::stream_error::eof) {
@@ -151,7 +158,7 @@ int main(int argc, char** argv)
 
   // ssl.set_verify_mode( boost::asio::ssl::verify_none );
   boost::system::error_code ec;
-  ssl.load_verify_file(   "rootCA.crt",    ec);
+  ssl.load_verify_file(   "certs/rootCA.crt",    ec);
   if(ec) throw std::runtime_error("CA file not found");
 
   auto global = nexus::global::init_client();

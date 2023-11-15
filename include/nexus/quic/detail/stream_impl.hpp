@@ -50,6 +50,7 @@ struct stream_impl : public boost::intrusive::list_base_hook<>,
   void read_headers(stream_header_read_operation& op);
 
   template <typename CompletionToken>
+  requires requires { std::is_invocable_v<CompletionToken,error_code>; }
   decltype(auto) async_read_headers(h3::fields& fields,
                                     CompletionToken&& token) {
     return boost::asio::async_initiate<CompletionToken, void(error_code)>(
@@ -68,6 +69,7 @@ struct stream_impl : public boost::intrusive::list_base_hook<>,
   void on_read();
 
   template <typename MutableBufferSequence, typename CompletionToken>
+  requires requires { std::is_invocable_v<CompletionToken,error_code, size_t>; }
   decltype(auto) async_read_some(const MutableBufferSequence& buffers,
                                  CompletionToken&& token) {
     return boost::asio::async_initiate<CompletionToken, void(error_code, size_t)>(
@@ -97,6 +99,7 @@ struct stream_impl : public boost::intrusive::list_base_hook<>,
   void write_headers(stream_header_write_operation& op);
 
   template <typename CompletionToken>
+  requires requires { std::is_invocable_v<CompletionToken,error_code>; }
   decltype(auto) async_write_headers(const h3::fields& fields,
                                      CompletionToken&& token) {
     return boost::asio::async_initiate<CompletionToken, void(error_code)>(
@@ -115,6 +118,7 @@ struct stream_impl : public boost::intrusive::list_base_hook<>,
   void on_write();
 
   template <typename ConstBufferSequence, typename CompletionToken>
+  requires requires { std::is_invocable_v<CompletionToken,error_code, size_t>; }
   decltype(auto) async_write_some(const ConstBufferSequence& buffers,
                                  CompletionToken&& token) {
     return boost::asio::async_initiate<CompletionToken, void(error_code, size_t)>(
@@ -148,6 +152,7 @@ struct stream_impl : public boost::intrusive::list_base_hook<>,
   void on_close();
 
   template <typename CompletionToken>
+  requires requires { std::is_invocable_v<CompletionToken,error_code>; }
   decltype(auto) async_close(CompletionToken&& token) {
     return boost::asio::async_initiate<CompletionToken, void(error_code)>(
         [this] (auto h) {

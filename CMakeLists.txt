@@ -30,6 +30,8 @@ target_include_directories(nexus-headers INTERFACE include ${BOOST_LIBRARY_INCLU
 target_link_libraries(nexus-headers INTERFACE  pancpp  ) #Boost::asio
 install(DIRECTORY include/nexus DESTINATION include)
 
+
+set(CMAKE_CXX_STANDARD 20 )
 add_subdirectory(examples)
 add_subdirectory(src)
 

@@ -123,6 +123,7 @@ void on_stream_read(std::unique_ptr<echo_stream> s,
   // echo the buffer back to the client
   auto& data = s->buffer;
   boost::asio::async_write(stream, boost::asio::buffer(data.data(), bytes_read),
+                                  boost::asio::transfer_at_least(1),
     [s=std::move(s)] (error_code ec, size_t bytes_written) mutable {
 
      // std::cout <<"wrote: \"" ;
@@ -145,6 +146,7 @@ void on_stream_write(std::unique_ptr<echo_stream> s,
   auto& stream = s->stream;
   auto& data = s->buffer;
   stream.async_read_some( boost::asio::buffer(data.data(),bytes_written ), // boost::asio::buffer(data),
+                        //  boost::asio::transfer_at_least(1),
     [s=std::move(s)] (error_code ec, size_t bytes_read) mutable {
 
   //    std::cout <<"read: \"" ;

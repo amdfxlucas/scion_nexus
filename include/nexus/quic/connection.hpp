@@ -1,6 +1,7 @@
 #pragma once
 
 #include <nexus/quic/connection_id.hpp>
+#include "pan.hpp"
 #include <nexus/quic/detail/connection_impl.hpp>
 
 namespace nexus::quic {
@@ -33,6 +34,8 @@ class connection {
   /// initiates the TLS handshake, but returns immediately without waiting
   /// for the handshake to complete
   connection(client& c, const udp::endpoint& endpoint, const char* hostname);
+
+  connection(client& c, const Pan::udp::Endpoint& endpoint, const char* hostname);
 
   /// return the associated io executor
   executor_type get_executor() const;

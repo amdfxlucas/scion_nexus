@@ -16,6 +16,13 @@ connection::connection(client& c, const udp::endpoint& endpoint,
   c.connect(*this, endpoint, hostname);
 }
 
+connection::connection(client& c, const Pan::udp::Endpoint& endpoint,
+                       const char* hostname)
+    : impl(c.socket)
+{
+  c.connect(*this, endpoint, hostname);
+}
+
 connection::executor_type connection::get_executor() const
 {
   return impl.get_executor();

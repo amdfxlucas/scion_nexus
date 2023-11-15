@@ -76,6 +76,10 @@ protected:
                const udp::endpoint& endpoint,
                const char* hostname);
 
+  void connect(connection& conn,
+               const Pan::udp::Endpoint& endpoint,
+               const char* hostname);
+
   /// close the socket, along with any related connections
   void close(error_code& ec);
   /// \overload

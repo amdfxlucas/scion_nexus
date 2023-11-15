@@ -53,7 +53,8 @@ class stream {
 
   /// read some bytes into the given buffer sequence
   template <typename MutableBufferSequence,
-            typename CompletionToken> // void(error_code, size_t)
+            typename CompletionToken> 
+            requires requires { std::is_invocable_v<CompletionToken,error_code, size_t>; } // void(error_code, size_t)
   decltype(auto) async_read_some(const MutableBufferSequence& buffers,
                                  CompletionToken&& token) {
     return impl.async_read_some(buffers, std::forward<CompletionToken>(token));
@@ -79,6 +80,7 @@ class stream {
   /// buffered until they fill an outgoing packet
   template <typename ConstBufferSequence,
             typename CompletionToken> // void(error_code, size_t)
+            requires requires { std::is_invocable_v<CompletionToken,error_code, size_t>; }
   decltype(auto) async_write_some(const ConstBufferSequence& buffers,
                                   CompletionToken&& token) {
     return impl.async_write_some(buffers, std::forward<CompletionToken>(token));
@@ -119,6 +121,7 @@ class stream {
   /// acknowledged by the peer. the associated connection must remain open until
   /// this graceful shutdown completes
   template <typename CompletionToken> // void(error_code)
+  requires requires { std::is_invocable_v<CompletionToken,error_code>; }
   decltype(auto) async_close(CompletionToken&& token) {
     return impl.async_close(std::forward<CompletionToken>(token));
   }
