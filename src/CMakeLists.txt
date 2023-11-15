@@ -22,7 +22,7 @@ if ( pan_FOUND AND NOT TARGET pan::pan)
   target_include_directories( pan::pan INTERFACE ${pan_INCLUDE_DIR})
 endif()
 
-set(CMAKE_CXX_STANDARD 20 )
+set(CMAKE_CXX_STANDARD 23 )
 
 set(nexus-srcs
 	client.cc
@@ -38,11 +38,14 @@ set(nexus-srcs
 	stream_state.cc)
 
 add_library(nexus ${nexus-srcs})
-target_link_libraries(nexus PUBLIC nexus-headers lsquic pancpp pan::pan
+target_link_libraries(nexus PUBLIC nexus-headers lsquic pancpp pan::pan sha3
 #Boost::asio
 ${Boost_LIBRARIES}
 Boost::system
 Boost::thread
 
 )
+
+target_include_directories( nexus PRIVATE /usr/local/include )
+
 install(TARGETS nexus LIBRARY DESTINATION lib)

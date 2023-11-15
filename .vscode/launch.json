@@ -5,15 +5,24 @@
     "version": "0.2.0",
     "configurations": [
         {
+
+
+
             "name": "(gdb) Launch client",
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/examples/echo/nexus_echo_client",
             "args": [
-                "localhost",
-                    "3333",
-                    "false",
-                    "a.txt"
+                "19-ffaa:1:1067,192.168.2.222",
+
+                // ia: 5348093186871399
+                // as: 68629368935 <-> ffaa:1106:7
+                // is: 19
+
+               // "localhost",
+                    "5555",
+                    "true",
+                    "certs/aa.txt"
 
 
             ],
@@ -37,14 +46,16 @@
             ]
         },
         {
-            //  ./nexus_echo_server localhost 3333 server.crt server.key false
+            //  ./nexus_echo_server localhost 5555 server.crt server.key false
+            // ./nexus_echo_server localhost 5555 certs/server.crt certs/server.key true
 
             // ./nexus_echo_client localhost 5555 true  cert/bb.txt
             "name": "(gdb) Launch server",
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/examples/echo/nexus_echo_server",
-            "args": ["localhost",
+            "args": [// "localhost",
+            "192.168.2.222",
                     "5555",
                 "certs/server.crt",
                 "certs/server.key",

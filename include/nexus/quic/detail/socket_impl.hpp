@@ -110,15 +110,15 @@ struct socket_impl : boost::intrusive::list_base_hook<> {
 
   void connect(connection_impl& c,
                const udp::endpoint& endpoint,
-               const char* hostname);
+               const std::string_view& hostname);
 
   void connect( connection_impl&c ,
                 const Pan::udp::Endpoint& endpoint,
-                const char* hostname );
+                const std::string_view& hostname );
 
                 void connect_impl( connection_impl&c ,
                 const sockaddr* endpoint,
-                const char* hostname );
+                const std::string_view& hostname );
 
   void cancel_on_signal( const system::error_code&code, int signal );
 
@@ -129,6 +129,7 @@ struct socket_impl : boost::intrusive::list_base_hook<> {
   connection_context* on_accept(lsquic_conn* conn);
 
   template <typename Connection, typename CompletionToken>
+  requires requires { std::is_invocable_v<CompletionToken,error_code>; }
   decltype(auto) async_accept(Connection& conn,
                               CompletionToken&& token) {
     auto& c = conn.impl;

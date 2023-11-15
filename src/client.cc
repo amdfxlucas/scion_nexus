@@ -62,11 +62,22 @@ udp::endpoint client::local_endpoint() const
 
 void client::connect(connection& conn,
                      const udp::endpoint& endpoint,
-                     const char* hostname)
+                     const std::string_view& hostname)
 {
   m_remote= endpoint;
   socket.connect(conn.impl, endpoint, hostname);
 }
+
+/*
+void client::connect(connection& conn,
+                     const Pan::udp::Endpoint& endpoint,
+                     const char* hostname)
+{
+  m_remote=  udp::endpoint{ endpoint.getIP(),endpoint.getPort() };
+  m_ia = endpoint.getIA();
+  socket.connect(conn.impl, endpoint, hostname);
+}
+*/
 
 void client::close()
 {
@@ -92,7 +103,7 @@ std::string scion_client::remote_address()const
 
   void scion_client::connect(connection& conn,
                const Pan::udp::Endpoint& endpoint,
-               const char* hostname)
+               const std::string_view& hostname)
 {
   m_remote = endpoint;
 //prepare_scion_client(endpoint);

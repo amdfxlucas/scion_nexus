@@ -35,6 +35,8 @@ public:
 class client {
 protected:      
   friend class connection;
+
+  //uint64_t m_ia =0;
   udp::endpoint m_remote;
   detail::engine_impl engine;
   detail::socket_impl socket;
@@ -74,11 +76,12 @@ protected:
   /// for the handshake to complete
   void connect(connection& conn,
                const udp::endpoint& endpoint,
-               const char* hostname);
+               const std::string_view& hostname);
 
-  void connect(connection& conn,
+ /* void connect(connection& conn,
                const Pan::udp::Endpoint& endpoint,
                const char* hostname);
+*/
 
   /// close the socket, along with any related connections
   void close(error_code& ec);
@@ -128,7 +131,7 @@ public:
   /// for the handshake to complete
   void connect(connection& conn,
                const Pan::udp::Endpoint& endpoint,
-               const char* hostname);
+               const std::string_view& hostname);
 
 virtual std::string remote_address()const;               
 

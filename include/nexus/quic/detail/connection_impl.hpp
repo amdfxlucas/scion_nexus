@@ -36,6 +36,7 @@ struct connection_impl : public connection_context,
   stream_impl* on_connect(lsquic_stream* stream);
 
   template <typename Stream, typename CompletionToken>
+  requires requires { std::is_invocable_v<CompletionToken,error_code>; }
   decltype(auto) async_connect(Stream& stream, CompletionToken&& token) {
     auto& s = stream.impl;
     return boost::asio::async_initiate<CompletionToken, void(error_code)>(
@@ -53,6 +54,7 @@ struct connection_impl : public connection_context,
   stream_impl* on_accept(lsquic_stream* stream);
 
   template <typename Stream, typename CompletionToken>
+  requires requires { std::is_invocable_v<CompletionToken,error_code>; }
   decltype(auto) async_accept(Stream& stream, CompletionToken&& token) {
     auto& s = stream.impl;
     return boost::asio::async_initiate<CompletionToken, void(error_code)>(

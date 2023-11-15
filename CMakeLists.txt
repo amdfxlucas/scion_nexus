@@ -5,7 +5,7 @@ find_package(Boost COMPONENTS thread system)
 list(APPEND CMAKE_PREFIX_PATH /usr/local/lib/cmake/pan )
 find_package(pancpp)
 #find_package(pan)
-
+find_package(sha3 HINTS /usr/local/lib/sha3 )
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/")
 
@@ -27,11 +27,11 @@ target_link_libraries(thread-sanitizer INTERFACE "-fsanitize=thread")
 
 add_library(nexus-headers INTERFACE)
 target_include_directories(nexus-headers INTERFACE include ${BOOST_LIBRARY_INCLUDES} dependency/pan-binding/include  )
-target_link_libraries(nexus-headers INTERFACE  pancpp  ) #Boost::asio
+target_link_libraries(nexus-headers INTERFACE  pancpp ) #Boost::asio
 install(DIRECTORY include/nexus DESTINATION include)
 
 
-set(CMAKE_CXX_STANDARD 20 )
+set(CMAKE_CXX_STANDARD 23 )
 add_subdirectory(examples)
 add_subdirectory(src)
 

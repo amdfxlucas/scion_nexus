@@ -33,9 +33,9 @@ class connection {
   /// open a connection to the given remote endpoint and hostname. this
   /// initiates the TLS handshake, but returns immediately without waiting
   /// for the handshake to complete
-  connection(client& c, const udp::endpoint& endpoint, const char* hostname);
+  connection(client& c, const udp::endpoint& endpoint, const std::string_view& hostname);
 
-  connection(client& c, const Pan::udp::Endpoint& endpoint, const char* hostname);
+  connection(client& c, const Pan::udp::Endpoint& endpoint, const std::string_view& hostname);
 
   /// return the associated io executor
   executor_type get_executor() const;

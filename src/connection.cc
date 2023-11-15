@@ -10,17 +10,17 @@ connection::connection(acceptor& a) : impl(a.impl) {}
 connection::connection(client& c) : impl(c.socket) {}
 
 connection::connection(client& c, const udp::endpoint& endpoint,
-                       const char* hostname)
+                       const std::string_view& hostname)
     : impl(c.socket)
 {
   c.connect(*this, endpoint, hostname);
 }
 
 connection::connection(client& c, const Pan::udp::Endpoint& endpoint,
-                       const char* hostname)
+                       const std::string_view& hostname)
     : impl(c.socket)
 {
-  c.connect(*this, endpoint, hostname);
+  dynamic_cast<scion_client&>(c).connect(*this, endpoint, hostname);
 }
 
 connection::executor_type connection::get_executor() const

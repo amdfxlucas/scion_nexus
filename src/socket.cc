@@ -9,48 +9,32 @@
 #include <lsquic.h>
 
 #include <cstdlib>
-
+#include <nexus/quic/detail/sockaddr_scion.hpp>
 #include <iostream>
 //#include <dirent.h>
 //#include <sys/types.h>
 #include "pan.hpp"
 
 using namespace std;
-namespace {
-
-/*int count_dir_entries(const char *path) 
-{
-   struct dirent *entry;
-   DIR *dir = opendir(path);
-   
-   if (dir == NULL) {
-      return;
-   }
-   int entry_count =0;
-   while ((entry = readdir(dir)) != NULL) {
-   ++entry_count;
-   }
-   closedir(dir);
-   return entry_count;
-}*/
-
-
-
-}
-
-//   list_dir("/home/username/Documents");
 
 
 namespace nexus::quic {
 
-void prepare_socket(udp::socket& sock, bool is_server, error_code& ec)
+template< typename socket_t>
+void prepare_socket( socket_t& sock, bool is_server, error_code& ec)
 {
   if (sock.non_blocking(true, ec); ec) {
     return;
   }
-  if (sock.set_option(receive_ecn{true}, ec); ec) {
+
+// not supported with unix domain sockets
+  if constexpr ( !std::is_same_v<socket_t,asio::local::datagram_protocol::socket> )
+  if (sock.set_option(receive_ecn{true}, ec); ec) { 
     return;
   }
+
+// not supported with unix domain sockets
+  if constexpr ( !std::is_same_v<socket_t,asio::local::datagram_protocol::socket> )
   if (is_server) {
     ec = nexus::detail::set_options(sock, receive_dstaddr{true},
                                     udp::socket::reuse_address{true});
@@ -165,17 +149,34 @@ void socket_impl::prepare_scion_client(const Pan::udp::Endpoint& remote,
   // m_conn_adapter = std::make_shared<Pan::udp::ConnSockAdapter>();
   socket = pan_sock_t( get_executor());
 
+
+ /* system::error_code eec;
+  prepare_socket( std::get<pan_sock_t>(socket) , false, eec );
+  if(eec)
+  {
+    throw std::runtime_error( eec.message() );
+  }
+*/
+
   using namespace std::placeholders;
   using asio::local::datagram_protocol;
-
+      srand( time(0) ) ;
       auto rnd = rand();
         m_go_path = std::format( "/tmp/scion_async_client_go_{}.sock", rnd );
         m_path =  std::format( "/tmp/scion_async_client_{}.sock",rnd );
 
-     
+     std::cout << "about to dial: " <<  remote.toString() << std::endl;
         m_conn->dial(local_address().c_str(),         remote);
 
-        std::get<pan_sock_t>(socket).open();
+ 
+        std::get<pan_sock_t>(socket).open(  );
+
+          system::error_code eec;
+  prepare_socket( std::get<pan_sock_t>(socket) , false, eec );
+  if(eec)
+  {
+    throw std::runtime_error( eec.message() );
+  }
 
         // std::remove(m_path);
         std::get<pan_sock_t>(socket).bind(datagram_protocol::endpoint(m_path));
@@ -212,17 +213,28 @@ void socket_impl::prepare_scion_client(const Pan::udp::Endpoint& remote,
 void socket_impl::prepare_scion_server( std::function< void (const system::error_code& err )> on_connected)
 {
   m_listen_conn = std::make_shared<Pan::udp::ListenConn>();
-
-int rnd = rand();
+  srand(time(0));
+  int rnd = rand();
         m_go_path = std::format( "/tmp/scion_async_server_go_{}.sock", rnd );
         m_path =  std::format( "/tmp/scion_async_server_{}.sock",rnd );
 
   m_listen_conn->listen( local_address().c_str() );
+  std::cout << "ListenConn listening at: " << m_listen_conn->getLocalEndpoint().toString() << std::endl;
 
 using asio::local::datagram_protocol;
   socket =  datagram_protocol::socket(get_executor() );
 
+ 
+
  std::get<pan_sock_t>(socket).open();
+
+ system::error_code eec;
+  prepare_socket( std::get<pan_sock_t>(socket) , true, eec );
+  if(eec)
+  {
+    throw std::runtime_error( eec.message() );
+  }
+
         // std::remove(socketPath);
         
       std::get<pan_sock_t>(socket).bind(datagram_protocol::endpoint(m_path.c_str() ) );
@@ -233,7 +245,7 @@ using asio::local::datagram_protocol;
    
         
 
-        
+        std::cout << "unix domain sock fd: " << std::get<pan_sock_t>(socket).native_handle() << std::endl;
         
 
        std::get<pan_sock_t>( socket).async_connect(
@@ -243,6 +255,8 @@ using asio::local::datagram_protocol;
             // std::bind(&Client::connected, this, _1)
             
             );
+
+
 
         // m_signals.async_wait(std::bind(&Server::cancel, this, std::placeholders::_1, std::placeholders::_2));
 
@@ -255,27 +269,62 @@ using asio::local::datagram_protocol;
 
 }
 
+/* called by scion_client ctor
+*/
 void socket_impl::connect(connection_impl& c,
                           const Pan::udp::Endpoint& endpoint,
-                          const char* hostname)
+                          const std::string_view& hostname)
 {
-  prepare_scion_client(endpoint,[&]( const system::error_code&)
-  {
-    connect_impl(c, std::get<pan_sock_t>(socket).local_endpoint().data() ,hostname);
-  }
-  );
+  prepare_scion_client(endpoint,
+                       [&](const system::error_code &ec)
+                       {
+                         if (ec)
+                         {
+                           std::cout << "Error: " << ec.message() << std::endl;
+                         }
 
-// connect_impl(c, std::get<pan_sock_t>(socket).local_endpoint().data() ,hostname);
+                         
+                         sockaddr hash = hashSockaddr( endpoint );
+                          auto remote = ScionUDPAddr(endpoint.toString() );
+
+                          std::cout << "endpoint: " << endpoint.toString() << " remote: " << remote.toString() << std::endl;
+
+                         addrMapper::instance().insertMapping(hash, remote);
+
+                         //auto* ptr_data = std::get<pan_sock_t>(socket).local_endpoint().data();
+                         //asio::local::datagram_protocol::endpoint remote(m_go_path);
+
+                         // udp::endpoint trick2{ endpoint.getIP()};
+
+                      //   auto before_fam = ptr_data->sa_family;
+                         // auto before_dat = ptr_data->sa_data;
+                        //  ptr_data->sa_family= AF_INET;
+
+                        //udp::endpoint trick{ reinterpret_cast<udp::endpoint*>(&remote) };
+
+                         connect_impl(c,// remote.data(),
+                                      // ptr_data,
+                                      &hash,
+                                      hostname);
+
+
+                 //       ptr_data->sa_family = before_fam;
+
+
+
+                       });
+
+  // connect_impl(c, std::get<pan_sock_t>(socket).local_endpoint().data() ,hostname);
 }
 
 void socket_impl::connect(connection_impl& c,
                           const udp::endpoint& endpoint,
-                          const char* hostname)
+                          const std::string_view& hostname)
 {
   connect_impl(c,endpoint.data(),hostname);
 }
 
-void socket_impl::connect_impl( connection_impl& c, const sockaddr* endpoint, const char* hostname )
+void socket_impl::connect_impl( connection_impl& c, const sockaddr* endpoint, const std::string_view& hostname )
 {
   assert(&c.socket == this);
   auto lock = std::unique_lock{engine.mutex};
@@ -283,7 +332,7 @@ void socket_impl::connect_impl( connection_impl& c, const sockaddr* endpoint, co
   auto cctx = reinterpret_cast<lsquic_conn_ctx_t*>(&c);
   ::lsquic_engine_connect(engine.handle.get(), N_LSQVER,
       local_addr.data(), endpoint, peer_ctx, cctx,
-      hostname, 0, nullptr, 0, nullptr, 0);
+      hostname.data(), 0, nullptr, 0, nullptr, 0);
   // note, this assert triggers with some quic versions that don't allow
   // multiple connections on the same address, see lquic's hash_conns_by_addr()
   assert(connection_state::is_open(c.state));
@@ -491,43 +540,70 @@ auto socket_impl::send_packets(const lsquic_out_spec* begin,
       msg.msg_control = nullptr;
     }
 
-  int nhandle;
+  
+  int err_send;
   if( auto usock =  std::get_if<udp::socket>(&socket) )
   {
-    nhandle = usock->native_handle();
+  auto  nhandle = usock->native_handle();
+  err_send = ::sendmsg(nhandle, &msg, 0);
+
   } else if( auto psock = std::get_if<pan_sock_t>(&socket) )
   {
-    nhandle = psock->native_handle();
-  }
+    int nhandle = psock->native_handle();
 
-    // TODO: send all at once with sendmmsg()
-    if (::sendmsg(nhandle, &msg, 0) == -1) {
-      ec.assign(errno, system_category());
-      if (ec == errc::resource_unavailable_try_again ||
-          ec == errc::operation_would_block) {
-        // lsquic won't call our send_packets() callback again until we call
-        // lsquic_engine_send_unsent_packets()
-        // wait for the socket to become writeable again, so we can call that
+// what if iovlen > 1 ?! do i have to concatenate the vectors ?!
+  //   msg.msg_iov = p->iov;
+    // msg.msg_iovlen = p->iovlen;
 
-        auto cb =     [this] (error_code ec) {
-              if (!ec) {
-                on_writeable();
-              } // else fatal?
-            };
- if( auto usock =  std::get_if<udp::socket>(&socket) )
-  {
-    usock->async_wait( boost::asio::socket_base::wait_write,   cb);
-  } else if( auto psock = std::get_if<pan_sock_t>(&socket) )
-  {
-    psock->async_wait( boost::asio::socket_base::wait_write,   cb);
-  }
-
-
-        
-        errno = ec.value(); // lsquic needs to see this errno
-      }
-      break;
+    if( msg.msg_iovlen > 1 ) 
+    {
+      std::cout << "msg_iovlen: "  << msg.msg_iovlen << " in send_packets()" << std::endl;
     }
+
+  // TODO: add proxy header expected by adapter
+  auto scion_remote= addrMapper::instance().lookupHash(*p->dest_sa);
+
+  std::vector< char > buff; // contains original data plus appended header
+  buff.resize( msg.msg_iov->iov_len +32 );
+
+  makeProxyHeader(buff.data() , **scion_remote); // might throw bad optional access 
+
+  //  err_send = send(nhandle, msg.msg_iov, msg.msg_iovlen , 0);
+    err_send = send(nhandle, buff.data() , msg.msg_iovlen+32 , 0);
+  }
+
+  // TODO: send all at once with sendmmsg()
+  if (err_send == -1)
+  {
+    ec.assign(errno, system_category());
+    if (ec == errc::resource_unavailable_try_again ||
+        ec == errc::operation_would_block)
+    {
+      // lsquic won't call our send_packets() callback again until we call
+      // lsquic_engine_send_unsent_packets()
+      // wait for the socket to become writeable again, so we can call that
+
+      auto cb = [this](error_code ec)
+      {
+        if (!ec)
+        {
+          on_writeable();
+        } // else fatal?
+      };
+      if (auto usock = std::get_if<udp::socket>(&socket))
+      {
+        usock->async_wait(boost::asio::socket_base::wait_write, cb);
+      }
+      else if (auto psock = std::get_if<pan_sock_t>(&socket))
+      {
+        psock->async_wait(boost::asio::socket_base::wait_write, cb);
+      }
+
+      errno = ec.value(); // lsquic needs to see this errno
+    }
+    std::cout << "send_packets error " << ec.message() << std::endl;
+    break;
+  }
   }
   return p;
 }
@@ -557,16 +633,34 @@ size_t socket_impl::recv_packet(iovec iov, udp::endpoint& peer,
   msg.msg_control = control.data();
   msg.msg_controllen = control.size();
 
-int nhandle;
+int bytes;
   if( auto usock =  std::get_if<udp::socket>(&socket) )
   {
-    nhandle = usock->native_handle();
+    int nhandle = usock->native_handle();
+    bytes = ::recvmsg(nhandle, &msg, 0);
   } else if( auto psock = std::get_if<pan_sock_t>(&socket) )
   {
-    nhandle = psock->native_handle();
+   int nhandle = psock->native_handle();
+
+// TODO: remove proxy header
+    std::array<char, 4096> buffer;
+
+   bytes= recv(nhandle , buffer.data(),4096 , 0);
+
+   ScionUDPAddr addr = parseProxyHeader( buffer.data(),bytes );
+
+    sockaddr ad = hashSockaddr( addr.toString() );
+
+
+    addrMapper::instance().insertMapping( ad,addr );
+    *peer.data() = ad;
+
+  std::memcpy(iov.iov_base, buffer.data()+32 , std::max( bytes-32,0) );
+
+   return bytes-32;
   }
 
-  const auto bytes = ::recvmsg(nhandle, &msg, 0);
+  
   if (bytes == -1) {
     ec.assign(errno, system_category());
     return 0;

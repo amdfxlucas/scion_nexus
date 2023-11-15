@@ -81,6 +81,18 @@
         "__verbose_abort": "cpp",
         "ios": "cpp",
         "locale": "cpp",
-        "complex": "cpp"
+        "complex": "cpp",
+        "forward_list": "cpp",
+        "unordered_set": "cpp",
+        "ranges": "cpp",
+        "regex": "cpp",
+        "random": "cpp",
+        "cfenv": "cpp",
+        "map": "cpp",
+        "set": "cpp",
+        "numeric": "cpp",
+        "cinttypes": "cpp",
+        "typeindex": "cpp",
+        "expected": "cpp"
     }
 }

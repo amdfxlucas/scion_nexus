@@ -7,6 +7,7 @@
 #include <nexus/quic/client.hpp>
 #include <nexus/quic/connection.hpp>
 #include <nexus/quic/stream.hpp>
+#include <nexus/quic/detail/scion-utils.h>
 
 // echo client takes one or more input files, writes each file in parallel
 // to a different stream and reads back their echos for display to stdout.
@@ -17,8 +18,8 @@
 namespace {
 
 struct configuration {
-  const char* hostname;
-  const char* scion;
+  std::string_view hostname;
+  std::string_view scion;
   const char* portstr;
   char** files_begin;
   char** files_end;
@@ -59,9 +60,18 @@ struct echo_connection : ref_counter<echo_connection> {
 
   echo_connection( nexus::quic::client* client,
                   const udp::endpoint& endpoint,
-                  const char* hostname)
-      : client(client), conn(*client, endpoint, hostname)
+                  const std::string_view& hostname)
+      : client(client),
+       conn(*client, endpoint, hostname)
   {}
+
+  echo_connection( nexus::quic::client* client,
+                  const Pan::udp::Endpoint& endpoint,
+                 const std::string_view& hostname)
+      : client(client),
+       conn(*client, endpoint, hostname)
+  {}
+
   ~echo_connection() {
     client->close();
   }
@@ -76,8 +86,9 @@ struct echo_stream : ref_counter<echo_stream> {
   std::ostream& output;
   buffer_type readbuf;
   buffer_type writebuf;
-  echo_stream(connection_ptr conn, const char* filename, std::ostream& output)
-      : conn(std::move(conn)), stream(this->conn->conn),
+  echo_stream(connection_ptr _conn, const char* filename, std::ostream& output)
+      : conn(std::move(_conn)),
+       stream(this->conn->conn),
         input(filename), output(output)
   {
     std::cout << "echo stream constructed for file: " << filename << std::endl;
@@ -136,19 +147,58 @@ void read_file(stream_ptr stream)
 
 } // anonymous namespace
 
+
+// 19-ffaa:1:1067,192.168.2.222
 int main(int argc, char** argv)
 {
   const auto cfg = parse_args(argc, argv);
 
   auto context = boost::asio::io_context{};
   auto ex = context.get_executor();
-  const auto endpoint = [&] {
+
+  
+  Pan::udp::Endpoint scion_remote;
+
+  if(cfg.scion=="true")
+  {
+    std::string full_address { cfg.hostname.data()};
+    full_address.append(":");
+    full_address.append( cfg.portstr );
+
+   auto add = Pan::udp::resolveUDPAddr( full_address.data() );//  cfg.hostname.data() );
+   scion_remote = add;
+
+   /* std::cout << "add: " << add.toString()
+    << " ia: "<< add.getIA() 
+    << " as: " << AS_FROM_IA( add.getIA())  
+      <<" isd: " << ISD_FROM_IA( add.getIA() ) << std::endl;
+
+    if( auto addr = ParseScionEndpoint( std::string(cfg.hostname),std::string(cfg.portstr) ); addr )
+    {      
+      scion_remote = *addr;
+      std::cout << "remote address: "<< scion_remote.toString() 
+      << " ia: "<< scion_remote.getIA() 
+      << " as: " << AS_FROM_IA(scion_remote.getIA())  
+      <<" isd: " << ISD_FROM_IA( scion_remote.getIA() ) << std::endl;
+    } else
+    {
+      throw std::runtime_error( "invalid scion address" );
+    }
+    */
+  }
+
+
+  boost::asio::ip::udp::endpoint endpoint;
+  if(cfg.scion == "false" )
+  {   endpoint = [&] {
       auto resolver = udp::resolver{ex};
       return resolver.resolve(cfg.hostname, cfg.portstr)->endpoint();
     }();
+  }
 
   std::cout <<"client connecting to: " <<
-   endpoint.address().to_string() +" : " << cfg.portstr <<std::endl;
+  // endpoint.address().to_string()
+  cfg.hostname << " : " << cfg.portstr <<std::endl;
 
   auto ssl = boost::asio::ssl::context{boost::asio::ssl::context::tlsv13};
   ::SSL_CTX_set_min_proto_version(ssl.native_handle(), TLS1_3_VERSION);
@@ -163,17 +213,21 @@ int main(int argc, char** argv)
 
   auto global = nexus::global::init_client();
   std::shared_ptr<nexus::quic::client> client;
+  connection_ptr conn;
   if( cfg.scion == "false")
   { client = std::make_shared< nexus::quic::client>(ex, udp::endpoint{endpoint.protocol(), 0}, ssl);
+   conn = connection_ptr{new echo_connection(client.get(), endpoint, cfg.hostname)};
    }
   else
   {
     client = std::dynamic_pointer_cast<nexus::quic::client>(
        std::make_shared< nexus::quic::scion_client>(ex, udp::endpoint{endpoint.protocol(), 0}, ssl )
        );
+
+       conn = connection_ptr{new echo_connection(client.get(), scion_remote, cfg.hostname)};
   }
 
-  auto conn = connection_ptr{new echo_connection(client.get(), endpoint, cfg.hostname)};
+  //auto conn = connection_ptr{new echo_connection(client.get(), endpoint, cfg.hostname)};
 
   // connect a stream for each input file
   for (auto f = cfg.files_begin; f != cfg.files_end; ++f) {
