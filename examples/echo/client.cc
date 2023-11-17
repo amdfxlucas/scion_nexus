@@ -212,7 +212,7 @@ int main(int argc, char** argv)
   if(ec) throw std::runtime_error("CA file not found");
 
   auto global = nexus::global::init_client();
-  global.log_to_stderr( "info");
+  global.log_to_stderr( "debug");
 
   std::shared_ptr<nexus::quic::client> client;
   connection_ptr conn;

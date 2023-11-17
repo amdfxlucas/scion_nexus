@@ -180,7 +180,7 @@ struct socket_impl : boost::intrusive::list_base_hook<> {
                                       const lsquic_out_spec* end,
                                       error_code& ec);
 
-  size_t recv_packet(iovec iov, udp::endpoint& peer, sockaddr_union& self,
+  size_t recv_packet(iovec& iov, udp::endpoint& peer, sockaddr_union& self,
                      int& ecn, error_code& ec);
 
 private:
