@@ -53,6 +53,8 @@ struct socket_impl : boost::intrusive::list_base_hook<> {
   std::shared_ptr<Pan::udp::Conn> m_conn;
   std::shared_ptr<Pan::udp::ConnSockAdapter> m_conn_adapter;
 
+ bool is_server()const { return static_cast<bool>(m_listen_conn); }
+  bool is_client()const {    return  static_cast<bool>(m_conn) ;  }
 
   /* requirements: close() 
                       async_wait(wait_type, token)   // /usr/local/include/boost/asio/basic_socket.hpp
@@ -180,6 +182,13 @@ struct socket_impl : boost::intrusive::list_base_hook<> {
 
   size_t recv_packet(iovec iov, udp::endpoint& peer, sockaddr_union& self,
                      int& ecn, error_code& ec);
+
+private:
+// this address is presented to the lsquic engine as its remote peer's address
+// for packets which are received through the unix domain socket
+// it is important that this is the same address, that connect_impl was called with
+inline const static udp::endpoint m_fake_endp 
+= udp::endpoint{ asio::ip::address::from_string("127.0.0.1"), 5555};
 };
 
 } // namespace nexus::quic::detail
