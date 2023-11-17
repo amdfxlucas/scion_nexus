@@ -37,15 +37,15 @@ struct ScionUDPAddr
 
     ScionUDPAddr( std::string addr )
     {
-       auto [ia,iisd,as,host,_port] = parseScionImpl(addr);
+       auto [_ia,iisd,as,host,_port] = parseScionImpl(addr);
 
        ip = boost::asio::ip::address::from_string(host);
-    
-        uint64_t ia_big;
+    port = _port;       
+    this->ia = _ia;
+        
 
-        reverseBytes( (uint8_t*)&ia, (uint8_t*)&ia_big,8);
-
-        port = _port;
+    /* uint64_t ia_big;
+        reverseBytes( (uint8_t*)&_ia, (uint8_t*)&ia_big,8);
         isd[0] = ( ((uint8_t*)(&iisd ) )[0]);
         isd[1] = ( ((uint8_t*)(&iisd ))[1]);
 
@@ -54,16 +54,34 @@ struct ScionUDPAddr
         {
             asn[i] = ( ((uint8_t*)(&ia_big ))[i+2]);
         }
+        */
     }
 
-    uint8_t isd[2]; // in BigEndian ?!
-    uint8_t asn[6]; // in BigEndian ?!
+    uint64_t ia;
+    // uint8_t isd[2]; // in BigEndian ?!
+    // uint8_t asn[6]; // in BigEndian ?!
     boost::asio::ip::address ip;
     uint16_t port;
     auto operator<=>(const ScionUDPAddr& )const = default;
 
+    void setISD( uint16_t isd )
+    {
+        ia = _MAKE_IA_(isd, getAS() );
+    }
+
+    void setAS( uint64_t as )
+    {
+        ia = _MAKE_IA_(getISD(), as );
+    }
+
+    void setIA( uint64_t _ia ){ ia= _ia; }
+    constexpr uint64_t getIA()const{return ia;}
+    constexpr uint16_t getISD()const{ return ISD_FROM_IA(ia);}
+    constexpr uint64_t getAS()const{return AS_FROM_IA(ia); }
+
+
         // parameter in littleE
-     void setISD( uint16_t  _isd )
+   /*  void setISD( uint16_t  _isd )
     {
         for( uint8_t i=0; i<2 ; ++i)
         {
@@ -71,6 +89,7 @@ struct ScionUDPAddr
         }
 
     }
+    
     //parameter in littleE
     void setAS( uint64_t _as )
     {
@@ -107,6 +126,7 @@ struct ScionUDPAddr
         return as;
         
     }
+*/
 
     std::string toString() const
     {
@@ -128,13 +148,14 @@ inline ScionUDPAddr parseProxyHeader(const char* buffer, size_t len)
     }
 
     uint64_t big_ia = BigEndian::fromByte( (const uint8_t*)buffer ) ;
-    uint64_t _ia = reverseEndian( big_ia);
+  //  uint64_t _ia = reverseEndian( big_ia);
+    addr.setIA( big_ia );
 
-    uint16_t _isd = ISD_FROM_IA( _ia );
+   /* uint16_t _isd = ISD_FROM_IA( _ia );
     uint64_t _as = AS_FROM_IA( _ia );
 
     addr.setISD(_isd);
-    addr.setAS( _as );
+    addr.setAS( _as );*/
 
 
     /*
@@ -167,10 +188,13 @@ inline ScionUDPAddr parseProxyHeader(const char* buffer, size_t len)
 inline void makeProxyHeader( char* buffer, const ScionUDPAddr& addr )
 {
 
-  for (size_t i = 0; i < 2; ++i)
+ /* for (size_t i = 0; i < 2; ++i)
         buffer[i] = addr.isd[i];
     for (size_t i = 0; i < 6; ++i)
          buffer[2 + i] = addr.asn[i] ;
+        */
+
+       BigEndian::toBytes( (uint8_t*) buffer, addr.getIA() );
 
     if(addr.ip.is_v4() )
     {

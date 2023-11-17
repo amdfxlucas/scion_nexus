@@ -41,12 +41,8 @@ protected:
   detail::engine_impl engine;
   detail::socket_impl socket;
 
-
   friend class client_helper;
 
-#ifdef BOOST_ASIO_ENABLE_HANDLER_TRACKING
-int f;
-#endif
 
  public:
   /// the polymorphic executor type, boost::asio::any_io_executor

@@ -28,8 +28,8 @@ target_compile_options(thread-sanitizer INTERFACE "-fsanitize=thread")
 target_link_libraries(thread-sanitizer INTERFACE "-fsanitize=thread")
 
 #if(CMAKE_BUILD_TYPE MATCHES Debug)
-	add_compile_definitions( BOOST_ASIO_ENABLE_HANDLER_TRACKING )
-    set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} -DBOOST_ASIO_ENABLE_HANDLER_TRACKING )
+#	add_compile_definitions( BOOST_ASIO_ENABLE_HANDLER_TRACKING )
+#    set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} -DBOOST_ASIO_ENABLE_HANDLER_TRACKING )
 #endif()
 
 
