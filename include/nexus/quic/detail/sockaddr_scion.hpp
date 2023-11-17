@@ -56,11 +56,30 @@ struct ScionUDPAddr
         }
     }
 
-    uint8_t isd[2]; // in BigEndian
-    uint8_t asn[6]; // in BigEndian 
+    uint8_t isd[2]; // in BigEndian ?!
+    uint8_t asn[6]; // in BigEndian ?!
     boost::asio::ip::address ip;
     uint16_t port;
     auto operator<=>(const ScionUDPAddr& )const = default;
+
+        // parameter in littleE
+     void setISD( uint16_t  _isd )
+    {
+        for( uint8_t i=0; i<2 ; ++i)
+        {
+            isd[i] = ((uint8_t*)&_isd)[i];
+        }
+
+    }
+    //parameter in littleE
+    void setAS( uint64_t _as )
+    {
+        uint64_t big_as = reverseEndian( _as);
+        for( uint8_t i=0; i<6 ; ++i)
+        {
+            asn[i] = ((uint8_t*)&big_as)[i+2];
+        }
+    }
 
     constexpr uint16_t getISD()const
     {
@@ -96,6 +115,9 @@ struct ScionUDPAddr
     }
 };
 
+
+/* parse the proxyHeader as written by ListenSockAdapter::panToUnix()
+*/
 inline ScionUDPAddr parseProxyHeader(const char* buffer, size_t len)
 {
      using namespace boost;
@@ -105,10 +127,22 @@ inline ScionUDPAddr parseProxyHeader(const char* buffer, size_t len)
         throw std::runtime_error("Invalid unix socket packet header");
     }
 
+    uint64_t big_ia = BigEndian::fromByte( (const uint8_t*)buffer ) ;
+    uint64_t _ia = reverseEndian( big_ia);
+
+    uint16_t _isd = ISD_FROM_IA( _ia );
+    uint64_t _as = AS_FROM_IA( _ia );
+
+    addr.setISD(_isd);
+    addr.setAS( _as );
+
+
+    /*
     for (size_t i = 0; i < 2; ++i)
         addr.isd[i] = buffer[i];
     for (size_t i = 0; i < 6; ++i)
         addr.asn[i] = buffer[2 + i];
+    */
 
     uint32_t addrLen = *(uint32_t*)&buffer[8];
     if (addrLen == 4) {
@@ -128,7 +162,8 @@ inline ScionUDPAddr parseProxyHeader(const char* buffer, size_t len)
     return addr;
 }
 
-
+/* make a proxy header as expected by ListenSockAdapter::unixToPan() 
+*/
 inline void makeProxyHeader( char* buffer, const ScionUDPAddr& addr )
 {
 

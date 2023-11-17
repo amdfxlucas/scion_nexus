@@ -39,6 +39,14 @@ constexpr uint64_t reverseEndian( uint64_t little )
     return result;
 }
 
+struct BigEndian
+{
+static uint64_t fromByte( const uint8_t* b)
+{
+    return uint64_t(b[7]) | uint64_t(b[6])<<8 | uint64_t(b[5])<<16 | uint64_t(b[4])<<24 |
+		uint64_t(b[3])<<32 | uint64_t(b[2])<<40 | uint64_t(b[1])<<48 | uint64_t(b[0])<<56;
+}
+};
 
 
 bool

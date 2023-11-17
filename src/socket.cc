@@ -175,6 +175,7 @@ namespace nexus::quic
 
       std::cout << "about to dial: " << remote.toString() << std::endl;
       m_conn->dial(local_address().c_str(), remote);
+      qDebug( "client local endpoint: "<<  m_conn->getLocalEndpoint() );
 
       std::get<pan_sock_t>(socket).open();
 
@@ -278,8 +279,11 @@ namespace nexus::quic
       [&]()
       {
         auto remote = ScionUDPAddr(endpoint.toString());
+        qDebug("connect remote: " << remote.toString() );
+
         // sockaddr hash = hashSockaddr(endpoint);
-        // addrMapper::instance().insertMapping(hash, remote);
+      //   addrMapper::instance().insertMapping(hash, remote);
+
         addrMapper::instance().insertMapping(*reinterpret_cast<const sockaddr *>(m_fake_endp.data()), remote);
 
         // auto* ptr_data = std::get<pan_sock_t>(socket).local_endpoint().data();
@@ -604,7 +608,12 @@ namespace nexus::quic
           if (is_server())
           {
             //  add proxy header expected by ListenSockAdapter
+
+           // assert( *p->dest_sa == *m_fake_endp.data()  );
+
             auto scion_remote = addrMapper::instance().lookupHash(*p->dest_sa);
+
+            qDebug("lookup scion_remote: " << (*scion_remote)->toString() );
 
             std::vector<char> buff; // contains original data plus appended header
             auto new_len = msg.msg_iov->iov_len + 32;
@@ -628,6 +637,8 @@ namespace nexus::quic
           }
           else if (is_client())
           {
+             assert( *p->dest_sa == *m_fake_endp.data()  );
+
             auto payload_len = msg.msg_iov->iov_len;
             qDebug("send: " << payload_len << " bytes");
             err_send = send(nhandle, msg.msg_iov->iov_base, payload_len, 0);
@@ -722,13 +733,16 @@ namespace nexus::quic
             qDebug("received " << bytes << " bytes");
 
             ScionUDPAddr addr = parseProxyHeader(buffer.data(), bytes);
-            /*
-                      sockaddr ad = hashSockaddr(addr.toString());
+            auto addr_str = addr.toString();
+            qDebug("parsed remote from: " << addr_str );
+            
+                      sockaddr ad = hashSockaddr(addr_str );
                       addrMapper::instance().insertMapping(ad, addr);
                       *peer.data() = ad;
+                      
 
-            */
-            *peer.data() = *m_fake_endp.data();
+            
+           // *peer.data() = *m_fake_endp.data();
 
             auto payload_len = std::max(bytes - 32, 0);
             iov.iov_len = payload_len;
