@@ -44,6 +44,9 @@ protected:
 
   friend class client_helper;
 
+#ifdef BOOST_ASIO_ENABLE_HANDLER_TRACKING
+int f;
+#endif
 
  public:
   /// the polymorphic executor type, boost::asio::any_io_executor
@@ -87,6 +90,15 @@ protected:
   void close(error_code& ec);
   /// \overload
   void close();
+
+  protected:
+
+    /// construct the client and bind a UDP socket to the given endpoint
+  client(const executor_type& ex,    ssl::context& ctx, const udp::endpoint& endpoint );
+
+  /// construct the client and bind a UDP socket to the given endpoint
+  client(const executor_type& ex, ssl::context& ctx, const settings& s,
+   const udp::endpoint& endpoint );
 };
 
 class scion_client : public client {

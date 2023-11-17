@@ -34,10 +34,16 @@ set(nexus-srcs
 	server.cc
 	settings.cc
 	socket.cc
+	tracing.hpp	
 	stream.cc
 	stream_state.cc)
 
 add_library(nexus ${nexus-srcs})
+
+#if(CMAKE_BUILD_TYPE MATCHES Debug)
+	target_compile_definitions( nexus PUBLIC BOOST_ASIO_ENABLE_HANDLER_TRACKING )
+#endif()
+
 target_link_libraries(nexus PUBLIC nexus-headers lsquic pancpp pan::pan sha3
 #Boost::asio
 ${Boost_LIBRARIES}

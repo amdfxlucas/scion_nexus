@@ -4,9 +4,11 @@
 #include <boost/circular_buffer.hpp>
 #include <nexus/ssl.hpp>
 #include <nexus/quic/detail/connection_impl.hpp>
+#include <nexus/quic/detail/engine_impl.hpp>
 #include <boost/asio.hpp>
 #include <variant>
 #include "pan.hpp"
+#include <nexus/quic/detail/quic-debug.hpp>
 
 struct lsquic_conn;
 struct lsquic_out_spec;
@@ -76,19 +78,35 @@ struct socket_impl : boost::intrusive::list_base_hook<> {
   std::string m_go_path;
   std::string m_path;
 
+// for scion_client only ?!
   socket_impl( engine_impl& e,ssl::context& s )
-  :engine(e),ssl(s) ,m_signals(get_executor(),SIGINT) {}
+  :engine(e),
+  ssl(s) ,
+  m_signals(get_executor(),SIGINT) ,
+  socket(pan_sock_t( e.get_executor()) )
+  {
+     m_signals.async_wait( std::bind(&socket_impl::cancel_on_signal,
+      this, std::placeholders::_1, std::placeholders::_2) );
+  }
 
+// for scion_client and scion_acceptor only
   socket_impl( engine_impl& e,ssl::context& s , const udp::endpoint& local )
-  :engine(e),ssl(s) ,
+  :engine(e),
+  ssl(s) ,
   m_signals(get_executor(),SIGINT),
-  local_addr(local) {}
+  local_addr(local),
+  socket(pan_sock_t( e.get_executor()) )
+   {
+     m_signals.async_wait( std::bind(&socket_impl::cancel_on_signal,
+      this, std::placeholders::_1, std::placeholders::_2) );
+   }
 
 
   socket_impl(engine_impl& engine, udp::socket&& socket, ssl::context& ssl);
   socket_impl(engine_impl& engine, pan_sock_t&& socket, ssl::context& ssl, const udp::endpoint& endpoint );
 
   socket_impl(engine_impl& engine, const udp::endpoint& endpoint,  bool is_server, ssl::context& ssl);
+
   ~socket_impl() {
     close();
   }
@@ -103,10 +121,14 @@ struct socket_impl : boost::intrusive::list_base_hook<> {
 
   void listen(int backlog);
 
-  void prepare_scion_server( std::function< void (const system::error_code& err )> on_connected= [](const system::error_code&  ){} );
+  void prepare_scion_server( std::function< void (const system::error_code& err )> on_connected
+              = [](const system::error_code&  ){ qDebug("server unix domain socket connected") ;} 
+              );
   void prepare_scion_client( const Pan::udp::Endpoint& remote,
                             std::function< void (const system::error_code& err )> on_connected =
-                             [](const system::error_code&  ){}  );
+                             [](const system::error_code&  )
+                             {qDebug( "client unix domain socket connected" ); } 
+                              );
 
   void connect(connection_impl& c,
                const udp::endpoint& endpoint,

@@ -66,6 +66,7 @@ class acceptor {
   /// accept an incoming connection whose TLS handshake has completed
   /// successfully
   template <typename CompletionToken> // void(error_code)
+   requires requires { std::is_invocable_v<error_code>; }
   decltype(auto) async_accept(connection& conn, CompletionToken&& token) {
     return impl.async_accept(conn, std::forward<CompletionToken>(token));
   }
@@ -117,6 +118,7 @@ class scion_acceptor : public acceptor{
   /// accept an incoming connection whose TLS handshake has completed
   /// successfully
   template <typename CompletionToken> // void(error_code)
+   requires requires { std::is_invocable_v<error_code>; }
   decltype(auto) async_accept(connection& conn, CompletionToken&& token) {
     return impl.async_accept(conn, std::forward<CompletionToken>(token));
   }

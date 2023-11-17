@@ -45,6 +45,8 @@ struct connection_impl : public connection_context,
           using op_type = stream_connect_async<Handler, executor_type>;
           auto p = handler_allocate<op_type>(h, std::move(h), get_executor(), s);
           auto op = handler_ptr<op_type, Handler>{p, &p->handler};
+
+          // precondition: this->state must be 'open' for connect to succeede
           connect(*op);
           op.release(); // release ownership
         }, token);

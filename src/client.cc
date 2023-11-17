@@ -2,6 +2,7 @@
 #include <nexus/h3/stream.hpp>
 #include <nexus/quic/connection.hpp>
 #include <lsquic.h>
+#include <iostream>
 #include <format>
 
 namespace nexus {
@@ -23,19 +24,42 @@ namespace quic {
 
   }
 */
+    // protected ctor for scion_client - does not init socket variant
+  client::client(const executor_type& ex,    ssl::context& ctx, const udp::endpoint& endpoint )
+   : engine(ex, &socket, nullptr, 0),
+   socket(engine, ctx,endpoint)
+  {
 
+  }
+
+  // protected ctor for scion_client - does not init socket variant
+  client::client(const executor_type& ex, ssl::context& ctx, const settings& s,
+   const udp::endpoint& endpoint )
+   : engine(ex, &socket, &s, 0),
+   socket(engine, ctx, endpoint )
+   {
+
+   }
+
+
+
+
+// bind socket to local endpoint
 client::client(const executor_type& ex, const udp::endpoint& endpoint,
                ssl::context& ctx)
     : engine(ex, &socket, nullptr, 0),
       socket(engine, endpoint, false, ctx)
 {
+  std::cout << "local socket bound "<< std::endl; // does boost have sth similar to qDebug ?!
 }
 
+// bind socket to local endpoint
 client::client(const executor_type& ex, const udp::endpoint& endpoint,
                ssl::context& ctx, const settings& s)
     : engine(ex, &socket, &s, 0),
       socket(engine, endpoint, false, ctx)
 {
+  std::cout << "local socket bound "<< std::endl;
 }
 
 client::client(udp::socket&& socket, ssl::context& ctx)
@@ -114,14 +138,16 @@ std::string scion_client::remote_address()const
 scion_client::scion_client(const executor_type& ex, const udp::endpoint& endpoint,
                ssl::context& ctx)
    // : engine(ex, &socket, nullptr, 0),      socket(engine, ctx)
-   : client( ex,endpoint,ctx)
+   //: client( ex,endpoint,ctx)
+   : client( ex,ctx, endpoint)
 {
 }
 
 scion_client::scion_client(const executor_type& ex, const udp::endpoint& endpoint,
                ssl::context& ctx, const settings& s)
     // : engine(ex, &socket, &s, 0),      socket(engine, ctx)
-    : client( ex,endpoint,ctx ,s )
+    //: client( ex,endpoint,ctx ,s )
+    : client( ex,ctx ,s , endpoint )
 {
 }
 

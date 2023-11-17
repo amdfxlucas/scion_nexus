@@ -14,6 +14,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+
+
+
 add_subdirectory(dependency)
 
 add_library(address-sanitizer INTERFACE)
@@ -24,6 +27,11 @@ add_library(thread-sanitizer INTERFACE)
 target_compile_options(thread-sanitizer INTERFACE "-fsanitize=thread")
 target_link_libraries(thread-sanitizer INTERFACE "-fsanitize=thread")
 
+#if(CMAKE_BUILD_TYPE MATCHES Debug)
+	add_compile_definitions( BOOST_ASIO_ENABLE_HANDLER_TRACKING )
+    set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} -DBOOST_ASIO_ENABLE_HANDLER_TRACKING )
+#endif()
+
 
 add_library(nexus-headers INTERFACE)
 target_include_directories(nexus-headers INTERFACE include ${BOOST_LIBRARY_INCLUDES} dependency/pan-binding/include  )
@@ -33,6 +41,8 @@ install(DIRECTORY include/nexus DESTINATION include)
 
 set(CMAKE_CXX_STANDARD 23 )
 add_subdirectory(examples)
+
+
 add_subdirectory(src)
 
 enable_testing()

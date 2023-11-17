@@ -37,41 +37,56 @@ struct ScionUDPAddr
 
     ScionUDPAddr( std::string addr )
     {
-        auto [ia,iisd,as,host,_port] = parseScionImpl(addr);
-        ip = boost::asio::ip::address::from_string(host);
-        port = _port;
-        isd[0] = *((uint8_t*)(&iisd )[0]);
-        isd[1] = *((uint8_t*)(&iisd )[1]);
+       auto [ia,iisd,as,host,_port] = parseScionImpl(addr);
 
-        for( int i = 2; i < 8; ++i)
+       ip = boost::asio::ip::address::from_string(host);
+    
+        uint64_t ia_big;
+
+        reverseBytes( (uint8_t*)&ia, (uint8_t*)&ia_big,8);
+
+        port = _port;
+        isd[0] = ( ((uint8_t*)(&iisd ) )[0]);
+        isd[1] = ( ((uint8_t*)(&iisd ))[1]);
+
+   
+        for( int i = 0; i < 6; ++i)
         {
-            asn[i-2] = *((uint8_t*)(&as )[i]);
+            asn[i] = ( ((uint8_t*)(&ia_big ))[i+2]);
         }
     }
 
-    uint8_t isd[2];
-    uint8_t asn[6];
+    uint8_t isd[2]; // in BigEndian
+    uint8_t asn[6]; // in BigEndian 
     boost::asio::ip::address ip;
     uint16_t port;
     auto operator<=>(const ScionUDPAddr& )const = default;
 
     constexpr uint16_t getISD()const
     {
-        //return (uint16_t(isd[0] <<8)) || (uint16_t(isd[1]) );
-        return (uint16_t(isd[1] <<8)) || (uint16_t(isd[0]) );
+        uint16_t iisd;
+        for( int i = 0; i<2; ++i)
+        {
+                ((uint8_t*)&iisd)[i] = isd[i];
+        }
+        return iisd;
     }
 
     constexpr uint64_t getAS()const
     {
-        uint64_t as;
+          uint64_t as_big{0};
+        uint64_t as{0};
 
-        //for( int i=0; auto b : asn )
-        for( int i=5; auto b : asn )
+         for( int i=0; i<6;++i )
+         
         {
-            // ((uint8_t*)&as )[i++] = b;
-            ((uint8_t*)&as )[i--] = b;
+             ((uint8_t*)(&as_big) )[2+i] = asn[i];
+           
         }
+    reverseBytes( (uint8_t*)&as_big, (uint8_t*)&as,8 );
+
         return as;
+        
     }
 
     std::string toString() const

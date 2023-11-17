@@ -1,4 +1,6 @@
+
 #include <nexus/quic/detail/connection_state.hpp>
+#include <nexus/quic/detail/quic-debug.hpp>
 #include <lsquic.h>
 
 namespace nexus::quic::detail {
@@ -59,7 +61,8 @@ udp::endpoint remote_endpoint(const variant& state, error_code& ec)
 }
 
 void on_connect(variant& state, lsquic_conn* handle)
-{
+{ 
+  //qDebug("");
   assert(handle);
   assert(std::holds_alternative<closed>(state));
   state.emplace<open>(*handle);
@@ -109,6 +112,9 @@ void on_accept(variant& state, lsquic_conn* handle)
   state.emplace<open>(*handle);
 }
 
+/*
+precondition: state must be 'open'
+*/
 bool stream_connect(variant& state, stream_connect_operation& op)
 {
   if (std::holds_alternative<error>(state)) {

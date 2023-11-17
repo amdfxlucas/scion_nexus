@@ -212,6 +212,8 @@ int main(int argc, char** argv)
   if(ec) throw std::runtime_error("CA file not found");
 
   auto global = nexus::global::init_client();
+  global.log_to_stderr( "info");
+
   std::shared_ptr<nexus::quic::client> client;
   connection_ptr conn;
   if( cfg.scion == "false")
@@ -236,7 +238,8 @@ int main(int argc, char** argv)
     conn->conn.async_connect(stream,    
      [s=std::move(s)] (error_code ec) {
         if (ec) {
-          std::cerr << "async_connect failed with " << ec.message() << '\n';
+          std::cerr << "async_connect stream failed with " 
+          << ec.message() << '\n';
           return;
         }
         write_file(s);

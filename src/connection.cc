@@ -2,6 +2,7 @@
 #include <nexus/quic/client.hpp>
 #include <nexus/quic/server.hpp>
 #include <nexus/quic/stream.hpp>
+#include "tracing.hpp"
 #include <lsquic.h>
 
 namespace nexus::quic {
@@ -66,6 +67,7 @@ udp::endpoint connection::remote_endpoint() const
 void connection::connect(stream& s, error_code& ec)
 {
   auto op = detail::stream_connect_sync{s.impl};
+  // precondition: connection_impl::state must be 'open', for connct to succeede
   impl.connect(op);
   op.wait();
   ec = std::get<0>(*op.result);
@@ -132,7 +134,8 @@ connection_impl::connection_impl(socket_impl& socket)
       svc(boost::asio::use_service<service<connection_impl>>(
             boost::asio::query(socket.get_executor(),
                                boost::asio::execution::context))),
-      socket(socket), state(connection_state::closed{})
+      socket(socket),
+      state(connection_state::closed{})
 {
   // register for service_shutdown() notifications
   svc.add(*this);
@@ -177,6 +180,7 @@ udp::endpoint connection_impl::remote_endpoint(error_code& ec) const
 void connection_impl::connect(stream_connect_operation& op)
 {
   auto lock = std::unique_lock{socket.engine.mutex};
+  // precondition: state must be open here, for connect to succeede
   if (connection_state::stream_connect(state, op)) {
     socket.engine.process(lock);
   }
@@ -242,6 +246,7 @@ void connection_impl::on_close()
 
 void connection_impl::on_handshake(int status)
 {
+  HANDLER_LOCATION;
   connection_state::on_handshake(state, status);
 }
 

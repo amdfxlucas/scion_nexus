@@ -105,12 +105,11 @@ scion_acceptor::scion_acceptor( server&s , detail::pan_sock_t&& socket, ssl::con
 
 void scion_acceptor::listen(int backlog )
 {
-  impl.prepare_scion_server( [&](const system::error_code& )
-                    {
-                      acceptor::listen(backlog);                  
-                    }
+  impl.prepare_scion_server( );
 
-  );
+   
+  acceptor::listen(backlog);                  
+                    
 
  // acceptor::listen(backlog);
 }
