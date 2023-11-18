@@ -104,9 +104,15 @@ void on_stream_read(std::unique_ptr<echo_stream> s,
                     error_code ec, size_t bytes_read)
 {
   auto& stream = s->stream;
+  if( bytes_read == 0 && ec.value() == 0) // success
+  { ec = nexus::quic::stream_error::eof;
+     std::cout << "NO BYTES READ FROM STREAM err: "
+     <<ec.message() << " close stream" << std::endl; 
+  }
   if (ec == nexus::quic::stream_error::eof) {
     // done reading and all writes were submitted, wait for the acks and shut
     // down gracefully
+    std::cout << "about to close stream" << std::endl;
     stream.async_close([s=std::move(s)] (error_code ec) {
         if (ec) {
           std::cerr << "stream close failed with " << ec.message() << '\n';
@@ -118,8 +124,15 @@ void on_stream_read(std::unique_ptr<echo_stream> s,
   }
   if (ec) {
     std::cerr << "read failed with " << ec.message() << '\n';
-    return;
+    return;  
   }
+
+     std::cout <<"stream read: " << bytes_read<<  " \n" ;
+      std::ranges::copy(  s->buffer|std::ranges::views::take(bytes_read) ,
+      std::ostream_iterator<char>(std::cout, "") );
+  //    std::cout << "\""<< std::endl;
+
+
   // echo the buffer back to the client
   auto& data = s->buffer;
   boost::asio::async_write(stream, boost::asio::buffer(data.data(), bytes_read),
@@ -127,8 +140,8 @@ void on_stream_read(std::unique_ptr<echo_stream> s,
     [s=std::move(s)] (error_code ec, size_t bytes_written) mutable {
 
      // std::cout <<"wrote: \"" ;
-      std::ranges::copy(  s->buffer|std::ranges::views::take(bytes_written) ,
-      std::ostream_iterator<char>(std::cout, "") );
+     // std::ranges::copy(  s->buffer|std::ranges::views::take(bytes_written) ,
+    //  std::ostream_iterator<char>(std::cout, "") );
     //  std::cout << "\""<< std::endl;
 
       on_stream_write(std::move(s), ec, bytes_written);
@@ -149,10 +162,16 @@ void on_stream_write(std::unique_ptr<echo_stream> s,
                         //  boost::asio::transfer_at_least(1),
     [s=std::move(s)] (error_code ec, size_t bytes_read) mutable {
 
-  //    std::cout <<"read: \"" ;
-      std::ranges::copy(  s->buffer|std::ranges::views::take(bytes_read) ,
-      std::ostream_iterator<char>(std::cout, "") );
+      // std::cout <<"stream read: " << bytes_read<<  " \n" ;
+      // std::ranges::copy(  s->buffer|std::ranges::views::take(bytes_read) ,
+      // std::ostream_iterator<char>(std::cout, "") );
   //    std::cout << "\""<< std::endl;
+
+      if(bytes_read == 0)
+      {
+        std::cout << "NOTHING TO READ ON STREAM err_code: "
+         <<  ec<<" " << ec.message() << std::endl;
+      }
 
       on_stream_read(std::move(s), ec, bytes_read);
     });
@@ -169,11 +188,10 @@ void accept_streams(connection_ptr c)
         std::cerr << "stream accept failed with " << ec.message() << '\n';
         return;
       }
-      std::cout << "server about to accept stream" << std::endl;
+      
       // start next accept
       accept_streams(std::move(c));
-      // start reading from stream
-      std::cerr << "new stream\n";
+      // start reading from stream     
       auto& stream = s->stream;
       auto& data = s->buffer;
       stream.async_read_some(boost::asio::buffer(data),
@@ -245,7 +263,11 @@ int main(int argc, char** argv)
    return true; });
 
   auto global = nexus::global::init_server();
-  global.log_to_stderr( "info");
+  #ifdef LSQUIC_LOG
+  global.log_to_stderr( LSQUIC_LOG_LVL );
+  #endif
+
+
   auto settings = nexus::quic::default_server_settings();
   if (cfg.max_streams) {
     settings.max_streams_per_connection = *cfg.max_streams;

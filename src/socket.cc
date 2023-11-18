@@ -175,7 +175,7 @@ namespace nexus::quic
 
       std::cout << "about to dial: " << remote.toString() << std::endl;
       m_conn->dial(local_address().c_str(), remote);
-      qDebug( "client local endpoint: "<<  m_conn->getLocalEndpoint() );
+      qDebug("client local endpoint: " << m_conn->getLocalEndpoint());
 
       std::get<pan_sock_t>(socket).open();
 
@@ -192,31 +192,19 @@ namespace nexus::quic
       std::get<pan_sock_t>(socket).bind(datagram_protocol::endpoint(m_path));
       m_conn_adapter = std::make_shared<Pan::udp::ConnSockAdapter>(m_conn->createSockAdapter(m_go_path.c_str(), m_path.c_str()));
 
-      std::cout << "client unix domain fd: " << std::get<pan_sock_t>(socket).native_handle() << std::endl;
-
-      std::get<pan_sock_t>(socket).async_connect(
+    /*  std::get<pan_sock_t>(socket).async_connect(
           datagram_protocol::endpoint(m_go_path),
           on_connected
           // std::bind(&Client::connected, this, _1)
       );
+      */
 
-      // ioContext.run();
-      //  socket.close();
-      //  adapter.close();
+  std::get<pan_sock_t>(socket).connect(
+          datagram_protocol::endpoint(m_go_path) );
+
       //  std::remove(socketPath);
 
-      /*void connected(const system::error_code& error)
-      {
-          using namespace std::placeholders;
 
-          if (error) {
-              std::cerr << "ASIO error: " << error.message() << std::endl;
-              return;
-          }
-
-        //  socket.async_send(asio::buffer(buffer), std::bind(&Client::sent, this, _1, _2));
-      }
-  */
     }
 
     void socket_impl::prepare_scion_server(std::function<void(const system::error_code &err)> on_connected)
@@ -251,13 +239,16 @@ namespace nexus::quic
 
       std::cout << "unix domain sock fd: " << std::get<pan_sock_t>(socket).native_handle() << std::endl;
 
-      std::get<pan_sock_t>(socket).async_connect(
+    /*  std::get<pan_sock_t>(socket).async_connect(
           datagram_protocol::endpoint(m_go_path.c_str()),
           // std::bind(&Server::connected, this, std::placeholders::_1)
           on_connected
           // std::bind(&Client::connected, this, _1)
 
-      );
+      );*/
+
+        std::get<pan_sock_t>(socket).connect(
+          datagram_protocol::endpoint(m_go_path.c_str()) );
 
       // m_signals.async_wait(std::bind(&Server::cancel, this, std::placeholders::_1, std::placeholders::_2));
 
@@ -279,10 +270,10 @@ namespace nexus::quic
       [&]()
       {
         auto remote = ScionUDPAddr(endpoint.toString());
-        qDebug("connect remote: " << remote.toString() );
+        qDebug("connect remote: " << remote.toString());
 
         // sockaddr hash = hashSockaddr(endpoint);
-      //   addrMapper::instance().insertMapping(hash, remote);
+        //   addrMapper::instance().insertMapping(hash, remote);
 
         addrMapper::instance().insertMapping(*reinterpret_cast<const sockaddr *>(m_fake_endp.data()), remote);
 
@@ -336,9 +327,7 @@ namespace nexus::quic
     }
     // precondition: connection_impl::state is 'closed'
     void socket_impl::on_connect(connection_impl &c, lsquic_conn_t *conn)
-    {
-      HANDLER_LOCATION;
-      qDebug("invoked");
+    {     
       connection_state::on_connect(c.state, conn);
       open_connections.push_back(c);
     }
@@ -487,13 +476,14 @@ namespace nexus::quic
     void socket_impl::on_readable()
     {
       std::array<unsigned char, 4096> buffer;
-      iovec iov;
-      iov.iov_base = buffer.data();
-      iov.iov_len = buffer.size();
+    
 
       error_code ec;
       for (;;)
       {
+        iovec iov;
+        iov.iov_base = buffer.data();
+        iov.iov_len = buffer.size();
         udp::endpoint peer;
         sockaddr_union self;
         int ecn = 0;
@@ -511,9 +501,9 @@ namespace nexus::quic
 
         auto lock = std::unique_lock{engine.mutex};
         const auto peer_ctx = this;
-        qDebug("packet in :) ");
+        //  qDebug("packet in :) ");
         ::lsquic_engine_packet_in(engine.handle.get(),
-                                  buffer.data(), // this must change to iov.iov_base for scion !!
+                                  (const uint8_t *)iov.iov_base,
                                   bytes,
                                   &self.addr,
                                   peer.data(),
@@ -592,9 +582,9 @@ namespace nexus::quic
         {
           int nhandle = psock->native_handle();
 
-          // what if iovlen > 1 ?! do i have to concatenate the vectors ?!
-          //   msg.msg_iov = p->iov;
-          // msg.msg_iovlen = p->iovlen;
+        
+
+
           auto endp = psock->local_endpoint();
           msg.msg_name = const_cast<void *>(static_cast<const void *>(endp.data()));
 
@@ -609,39 +599,60 @@ namespace nexus::quic
           {
             //  add proxy header expected by ListenSockAdapter
 
-           // assert( *p->dest_sa == *m_fake_endp.data()  );
+            // assert( *p->dest_sa == *m_fake_endp.data()  );
+
+            std::array<char, 32> proxy_hdr_buff;
+            iovec prepended_hdr;
+            prepended_hdr.iov_base = proxy_hdr_buff.data();
+            prepended_hdr.iov_len = 32;
 
             auto scion_remote = addrMapper::instance().lookupHash(*p->dest_sa);
+            makeProxyHeader( proxy_hdr_buff.data(), **scion_remote); // might throw bad optional access
 
-            qDebug("lookup scion_remote: " << (*scion_remote)->toString() );
+            std::vector<iovec> io(p->iovlen + 1);
+            io[0] = prepended_hdr;
+            for (int i = 0; i < p->iovlen; ++i)
+            {
+              io[i + 1] = p->iov[i];
+            }
 
-            std::vector<char> buff; // contains original data plus appended header
+            msg.msg_iov = io.data();    // p->iov;
+            msg.msg_iovlen = io.size(); // p->iovlen;
+
+        //    qDebug("lookup scion_remote: " << (*scion_remote)->toString());
+
+          
             auto new_len = msg.msg_iov->iov_len + 32;
-            buff.resize(new_len, 0);
+          
 
-            makeProxyHeader(buff.data(), **scion_remote); // might throw bad optional access
+            
 
-            std::memcpy(buff.data() + 32, msg.msg_iov->iov_base, msg.msg_iov->iov_len);
+         //   std::memcpy(buff.data() + 32, msg.msg_iov->iov_base, msg.msg_iov->iov_len);
 
-            msg.msg_iov->iov_base = buff.data();
-            msg.msg_iov->iov_len = new_len;
+        //    msg.msg_iov->iov_base = buff.data();
+        //    msg.msg_iov->iov_len = new_len;
             // msg.msg_iovlen = new_len;
 
-            // err_send = ::sendmsg(nhandle, &msg, 0);           // operation not permitted !!
+        
 
             qDebug(" send: " << new_len << " bytes");
             // auto sock_endp =  asio::local::datagram_protocol::endpoint(m_go_path);
             //  err_send = send(nhandle, msg.msg_iov, msg.msg_iov->iov_len , 0);
-            err_send = send(nhandle, buff.data(), new_len, 0);
-            // err_send = sendto(nhandle, buff.data(), new_len,0,sock_endp.data(), sock_endp.size() );
+
+          //  err_send = ::sendmsg(nhandle, &msg, MSG_DONTWAIT );           // operation not permitted !!
+            //err_send = send(nhandle, buff.data(), new_len, 0);
+
+            err_send = writev( nhandle,msg.msg_iov, msg.msg_iovlen );
+
           }
           else if (is_client())
           {
-             assert( *p->dest_sa == *m_fake_endp.data()  );
+            assert(*p->dest_sa == *m_fake_endp.data());
 
             auto payload_len = msg.msg_iov->iov_len;
             qDebug("send: " << payload_len << " bytes");
-            err_send = send(nhandle, msg.msg_iov->iov_base, payload_len, 0);
+             err_send = send(nhandle, msg.msg_iov->iov_base, payload_len, 0);
+            // err_send = ::sendmsg(nhandle, &msg, MSG_DONTWAIT );
           }
         }
 
@@ -694,7 +705,7 @@ namespace nexus::quic
     constexpr size_t dstaddr_size = std::max(dstaddr4_size, sizeof(in6_pktinfo));
     constexpr size_t max_control_size = CMSG_SPACE(ecn_size) + CMSG_SPACE(dstaddr_size);
 
-    size_t socket_impl::recv_packet(iovec iov, udp::endpoint &peer,
+    size_t socket_impl::recv_packet(iovec& iov, udp::endpoint &peer,
                                     sockaddr_union &self, int &ecn,
                                     error_code &ec)
     {
@@ -722,43 +733,43 @@ namespace nexus::quic
 
         if (is_server())
         { // TODO: remove proxy header
-          std::array<char, 4096> buffer;
-          // this buffer and the copy-ing can be avoided
-          // call recv( iov.base )
-          // and adjust afterwards:  iov.base+=32
 
-          bytes = recv(nhandle, buffer.data(), 4096, 0);
+          bytes = recv(nhandle, iov.iov_base, iov.iov_len, 0);
+
           if (bytes > 0)
           {
             qDebug("received " << bytes << " bytes");
 
-            ScionUDPAddr addr = parseProxyHeader(buffer.data(), bytes);
+            ScionUDPAddr addr = parseProxyHeader((const char *)iov.iov_base, bytes);
             auto addr_str = addr.toString();
-            qDebug("parsed remote from: " << addr_str );
-            
-                      sockaddr ad = hashSockaddr(addr_str );
-                      addrMapper::instance().insertMapping(ad, addr);
-                      *peer.data() = ad;
-                      
+            // qDebug("parsed remote from: " << addr_str);
 
-            
-           // *peer.data() = *m_fake_endp.data();
+            sockaddr ad = hashSockaddr(addr_str);
+            addrMapper::instance().insertMapping(ad, addr);
+            *peer.data() = ad;
+
+            // *peer.data() = *m_fake_endp.data();
 
             auto payload_len = std::max(bytes - 32, 0);
             iov.iov_len = payload_len;
-            std::memcpy(iov.iov_base, buffer.data() + 32, payload_len);
+            if(payload_len)
+            { // iov.iov_base += 32;
 
-           // return payload_len;
-           bytes = payload_len;
+              iov.iov_base = (void*)( ((uint8_t*)iov.iov_base) +32) ;
+
+            }
+          
+            bytes = payload_len;
           }
         }
         else if (is_client())
         {
           bytes = recv(nhandle, msg.msg_iov->iov_base, msg.msg_iov->iov_len, 0);
-          if(bytes>0)           
-          {   qDebug("received " << bytes << " bytes");
-              iov.iov_len = bytes;
-              *peer.data() = *m_fake_endp.data();
+          if (bytes > 0)
+          {
+            qDebug("received " << bytes << " bytes");
+            iov.iov_len = bytes;
+            *peer.data() = *m_fake_endp.data();
           }
         }
       }
@@ -767,7 +778,8 @@ namespace nexus::quic
       {
 
         ec.assign(errno, system_category());
-        qDebug("recv error: " << ec.message());
+        // qDebug("recv error: " << ec.message());
+        // will be 'resource temporarily unabailable' most of the time
         return 0;
       }
 

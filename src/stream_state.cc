@@ -183,8 +183,15 @@ void on_read_body(variant& state, lsquic_stream* handle)
 {
   auto& b = *std::get_if<body>(&state);
   error_code ec;
+  // Returns:	Number of bytes read, zero if EOS has been reached, or -1 on error.
   auto bytes = ::lsquic_stream_readv(handle, b.op->iovs, b.op->num_iovs);
-  if (bytes == -1) {
+  /*
+  if( bytes == 0 ) // EndOfStream 
+  {
+    ec = make_error_code(quic::stream_error::eof);
+  }
+  else */
+   if (bytes == -1) {
     bytes = 0;
     ec.assign(errno, system_category());
   }
@@ -392,6 +399,8 @@ void flush(variant& state, error_code& ec)
   }
 }
 
+/*precondition: state must be open for operation to complete successfully
+*/
 void shutdown(variant& state, int how, error_code& ec)
 {
   if (std::holds_alternative<error>(state)) {
@@ -449,7 +458,7 @@ transition close(variant& state, stream_close_operation& op)
     return transition::none;
   }
   auto& o = *std::get_if<open>(&state);
-  ::lsquic_stream_close(&o.handle);
+  ::lsquic_stream_close(&o.handle); // why is return value discarded ?! 
 
   auto ec = make_error_code(stream_error::aborted);
   receiving_stream_state::cancel(o.in, ec);
