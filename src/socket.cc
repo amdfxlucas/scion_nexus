@@ -31,14 +31,14 @@ namespace nexus::quic
     }
 
     // not supported with unix domain sockets
-    if constexpr (!std::is_same_v<socket_t, asio::local::datagram_protocol::socket>)
+    if constexpr (!std::is_same_v<socket_t, boost::asio::local::datagram_protocol::socket>)
       if (sock.set_option(receive_ecn{true}, ec); ec)
       {
         return;
       }
 
     // not supported with unix domain sockets
-    if constexpr (!std::is_same_v<socket_t, asio::local::datagram_protocol::socket>)
+    if constexpr (!std::is_same_v<socket_t, boost::asio::local::datagram_protocol::socket>)
       if (is_server)
       {
         ec = nexus::detail::set_options(sock, receive_dstaddr{true},
@@ -127,10 +127,11 @@ namespace nexus::quic
     {
       auto lock = std::unique_lock{engine.mutex};
       incoming_connections.set_capacity(backlog);
+      assert( incoming_connections.capacity() == backlog );
       start_recv();
     }
 
-    void socket_impl::cancel_on_signal(const system::error_code &error, int signal)
+    void socket_impl::cancel_on_signal(const boost::system::error_code &error, int signal)
     {
       if (error)
       {
@@ -152,7 +153,7 @@ namespace nexus::quic
 
     void socket_impl::prepare_scion_client(
         const Pan::udp::Endpoint &remote,
-        std::function<void(const system::error_code &err)> on_connected)
+        std::function<void(const boost::system::error_code &err)> on_connected)
     {
       m_conn = std::make_shared<Pan::udp::Conn>();
       // m_conn_adapter = std::make_shared<Pan::udp::ConnSockAdapter>();
@@ -167,7 +168,7 @@ namespace nexus::quic
      */
 
       using namespace std::placeholders;
-      using asio::local::datagram_protocol;
+      using boost::asio::local::datagram_protocol;
       srand(time(0));
       auto rnd = rand();
       m_go_path = std::format("/tmp/scion_async_client_go_{}.sock", rnd);
@@ -207,7 +208,7 @@ namespace nexus::quic
 
     }
 
-    void socket_impl::prepare_scion_server(std::function<void(const system::error_code &err)> on_connected)
+    void socket_impl::prepare_scion_server(std::function<void(const boost::system::error_code &err)> on_connected)
     {
       m_listen_conn = std::make_shared<Pan::udp::ListenConn>();
       srand(time(0));
@@ -218,7 +219,7 @@ namespace nexus::quic
       m_listen_conn->listen(local_address().c_str());
       std::cout << "ListenConn listening at: " << m_listen_conn->getLocalEndpoint().toString() << std::endl;
 
-      using asio::local::datagram_protocol;
+      using boost::asio::local::datagram_protocol;
       socket = datagram_protocol::socket(get_executor());
 
       std::get<pan_sock_t>(socket).open();
@@ -325,13 +326,37 @@ namespace nexus::quic
 
       start_recv();
     }
-    // precondition: connection_impl::state is 'closed'
+
+    /*!
+    \brief internal implementation of stream_api for outgoing connections
+    lsquic_conn_ctx_t* on_new_conn(void* ectx, lsquic_conn_t* conn)
+
+     precondition: connection_impl::state is 'closed'
+    */
     void socket_impl::on_connect(connection_impl &c, lsquic_conn_t *conn)
     {     
       connection_state::on_connect(c.state, conn);
       open_connections.push_back(c);
     }
 
+/*!
+  \brief internal implementation of socket_impl::async_connect
+
+        void acceptor::accept(connection& conn, error_code& ec) for quic
+        void acceptor::accept(server_connection& conn, error_code& ec) for h3
+  \details
+  IF the socket has incoming_connections:
+    dequeue an incoming_conn from the queue,
+    transit its state from 'closed' to 'open'
+    place it in the open_connections queue
+  ELSE
+
+    the connection's connection state
+    is transitioned from 'closed' to 'open' 
+    and it is placed in the accepting_connections queue
+
+
+*/
     void socket_impl::accept(connection_impl &c, accept_operation &op)
     {
       auto lock = std::unique_lock{engine.mutex};
@@ -353,6 +378,10 @@ namespace nexus::quic
       engine.process(lock);
     }
 
+  /*!
+  \brief internal implementation of stream_api for incoming connections
+  lsquic_conn_ctx_t* on_new_conn(void* ectx, lsquic_conn_t* conn) 
+  */
     connection_context *socket_impl::on_accept(lsquic_conn_t *conn)
     {
       assert(conn);
@@ -364,7 +393,7 @@ namespace nexus::quic
           ::lsquic_conn_close(conn);
           return nullptr;
         }
-        incoming_connections.push_back({conn, engine.max_streams_per_connection});
+        incoming_connections.push_back(incoming_connection{conn, engine.max_streams_per_connection});
         return &incoming_connections.back();
       }
       auto &c = accepting_connections.front();
@@ -517,6 +546,11 @@ namespace nexus::quic
       auto lock = std::scoped_lock{engine.mutex};
       ::lsquic_engine_send_unsent_packets(engine.handle.get());
     }
+
+/*!
+ \brief internal implementation of 
+ int engine_impl::send_packets(const lsquic_out_spec* specs, unsigned n_specs)
+*/
 
     auto socket_impl::send_packets(const lsquic_out_spec *begin,
                                    const lsquic_out_spec *end,

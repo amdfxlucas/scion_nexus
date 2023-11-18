@@ -46,7 +46,7 @@ inline void list_transfer(connection_impl& s, connection_list& from,
 struct socket_impl : boost::intrusive::list_base_hook<> {
   engine_impl& engine;
   std::variant<std::monostate,udp::socket,pan_sock_t> socket; 
-  asio::signal_set m_signals;
+  boost::asio::signal_set m_signals;
 
   std::shared_ptr<Pan::udp::ListenConn > m_listen_conn;
   std::shared_ptr<Pan::udp::ListenSockAdapter> m_listen_sock_adapter;
@@ -74,6 +74,7 @@ struct socket_impl : boost::intrusive::list_base_hook<> {
   */
 
   boost::circular_buffer<incoming_connection> incoming_connections;
+   // no init to capacity -> this is done in listen( int backlog )
   connection_list accepting_connections;
   connection_list open_connections;
   bool receiving = false;
@@ -123,12 +124,12 @@ struct socket_impl : boost::intrusive::list_base_hook<> {
 
   void listen(int backlog);
 
-  void prepare_scion_server( std::function< void (const system::error_code& err )> on_connected
-              = [](const system::error_code&  ){ qDebug("server unix domain socket connected") ;} 
+  void prepare_scion_server( std::function< void (const boost::system::error_code& err )> on_connected
+              = [](const boost::system::error_code&  ){ qDebug("server unix domain socket connected") ;} 
               );
   void prepare_scion_client( const Pan::udp::Endpoint& remote,
-                            std::function< void (const system::error_code& err )> on_connected =
-                             [](const system::error_code&  )
+                            std::function< void (const boost::system::error_code& err )> on_connected =
+                             [](const boost::system::error_code&  )
                              {qDebug( "client unix domain socket connected" ); } 
                               );
 
@@ -144,7 +145,7 @@ struct socket_impl : boost::intrusive::list_base_hook<> {
                 const sockaddr* endpoint,
                 const std::string_view& hostname );
 
-  void cancel_on_signal( const system::error_code&code, int signal );
+  void cancel_on_signal( const boost::system::error_code&code, int signal );
 
 
   void on_connect(connection_impl& c, lsquic_conn* conn);
@@ -188,7 +189,7 @@ private:
 // for packets which are received through the unix domain socket
 // it is important that this is the same address, that connect_impl was called with
 inline const static udp::endpoint m_fake_endp 
-= udp::endpoint{ asio::ip::address::from_string("127.0.0.1"), 5555};
+= udp::endpoint{ boost::asio::ip::address::from_string("127.0.0.1"), 5555};
 };
 
 } // namespace nexus::quic::detail

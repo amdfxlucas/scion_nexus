@@ -5,9 +5,13 @@ include(FindPackageHandleStandardArgs)
 
 find_library(pan_LIBRARY 
 NAMES pan pan_c libpan libpand pand
-    HINTS "/usr/local/lib"  # "${CMAKE_PREFIX_PATH}/cmake/pan"
+   # HINTS "/usr/local/lib"  # "${CMAKE_PREFIX_PATH}/cmake/pan"
+   HINTS "${PROJECT_SOURCE_DIR}/dependency/pan-bindings"
 	)
-find_path( pan_INCLUDE_DIR NAMES pan.h HINTS "/usr/local/include/pan" )
+find_path( pan_INCLUDE_DIR NAMES pan.h
+# HINTS "/usr/local/include/pan" 
+HINTS "${PROJECT_SOURCE_DIR}/dependency/pan-bindings/include"
+)
 
 find_package_handle_standard_args(pan REQUIRED_VARS pan_LIBRARY pan_INCLUDE_DIR)
 

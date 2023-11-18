@@ -37,7 +37,7 @@ struct incoming_connection : connection_context {
   lsquic_conn* handle;
   boost::circular_buffer<lsquic_stream*> incoming_streams; // TODO: allocator
 
-  incoming_connection(lsquic_conn* handle, uint32_t max_streams)
+  explicit incoming_connection(lsquic_conn* handle, uint32_t max_streams) noexcept
       : connection_context(true),
         handle(handle),
         incoming_streams(max_streams) {}
@@ -54,16 +54,30 @@ struct accepting {
 
 /// the connection is open and ready to initiate and accept streams
 struct open {
+  bool incoming_initialized = false; // for debug only
   lsquic_conn& handle;
-  boost::circular_buffer<lsquic_stream*> incoming_streams;
-  stream_list connecting_streams;
+  boost::circular_buffer<lsquic_stream*> incoming_streams; // streams initated by the peer
+  stream_list connecting_streams; // streams in stream_state::connecting
   stream_list accepting_streams;
-  stream_list open_streams;
+  stream_list open_streams;     // stream in stream_state::open
   stream_list closing_streams;
+  
   // handshake errors are stored here until they can be delivered on close
   error_code ec;
 
-  explicit open(lsquic_conn& handle) noexcept : handle(handle) {}
+  explicit open( incoming_connection&& incoming ) noexcept
+  : handle( *incoming.handle ),
+  incoming_streams( std::move(incoming.incoming_streams ) ),
+  incoming_initialized(true)
+  {
+
+  }
+
+  explicit open(lsquic_conn& handle) noexcept 
+  : handle(handle) 
+  //,  incoming_streams(3) //  not necessary - set in connection_state::accept_incoming() from incoming_connection
+
+  {}
 };
 
 /// the connection is processing open streams but not initiating or accepting

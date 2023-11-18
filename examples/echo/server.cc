@@ -115,9 +115,9 @@ void on_stream_read(std::unique_ptr<echo_stream> s,
     std::cout << "about to close stream" << std::endl;
     stream.async_close([s=std::move(s)] (error_code ec) {
         if (ec) {
-          std::cerr << "stream close failed with " << ec.message() << '\n';
+          std::cout << "stream close failed with " << ec.message() << '\n';
         } else {
-          std::cerr << "stream closed\n";
+          std::cout << "stream closed\n";
         }
       });
     return;
@@ -130,7 +130,7 @@ void on_stream_read(std::unique_ptr<echo_stream> s,
      std::cout <<"stream read: " << bytes_read<<  " \n" ;
       std::ranges::copy(  s->buffer|std::ranges::views::take(bytes_read) ,
       std::ostream_iterator<char>(std::cout, "") );
-  //    std::cout << "\""<< std::endl;
+      std::cout << std::endl;
 
 
   // echo the buffer back to the client
@@ -256,7 +256,7 @@ int main(int argc, char** argv)
 
   ssl.set_verify_callback([](
                               bool preverified,              // True if the certificate passed pre-verification.
-                              asio::ssl::verify_context &ctx // The peer certificate and other context.
+                              boost::asio::ssl::verify_context &ctx // The peer certificate and other context.
                           )
                           {
   std::cout << "client cert successfully verified!" << std::endl;

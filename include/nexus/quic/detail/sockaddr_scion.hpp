@@ -43,23 +43,9 @@ struct ScionUDPAddr
     port = _port;       
     this->ia = _ia;
         
-
-    /* uint64_t ia_big;
-        reverseBytes( (uint8_t*)&_ia, (uint8_t*)&ia_big,8);
-        isd[0] = ( ((uint8_t*)(&iisd ) )[0]);
-        isd[1] = ( ((uint8_t*)(&iisd ))[1]);
-
-   
-        for( int i = 0; i < 6; ++i)
-        {
-            asn[i] = ( ((uint8_t*)(&ia_big ))[i+2]);
-        }
-        */
     }
 
     uint64_t ia;
-    // uint8_t isd[2]; // in BigEndian ?!
-    // uint8_t asn[6]; // in BigEndian ?!
     boost::asio::ip::address ip;
     uint16_t port;
     auto operator<=>(const ScionUDPAddr& )const = default;
@@ -78,55 +64,6 @@ struct ScionUDPAddr
     constexpr uint64_t getIA()const{return ia;}
     constexpr uint16_t getISD()const{ return ISD_FROM_IA(ia);}
     constexpr uint64_t getAS()const{return AS_FROM_IA(ia); }
-
-
-        // parameter in littleE
-   /*  void setISD( uint16_t  _isd )
-    {
-        for( uint8_t i=0; i<2 ; ++i)
-        {
-            isd[i] = ((uint8_t*)&_isd)[i];
-        }
-
-    }
-    
-    //parameter in littleE
-    void setAS( uint64_t _as )
-    {
-        uint64_t big_as = reverseEndian( _as);
-        for( uint8_t i=0; i<6 ; ++i)
-        {
-            asn[i] = ((uint8_t*)&big_as)[i+2];
-        }
-    }
-
-    constexpr uint16_t getISD()const
-    {
-        uint16_t iisd;
-        for( int i = 0; i<2; ++i)
-        {
-                ((uint8_t*)&iisd)[i] = isd[i];
-        }
-        return iisd;
-    }
-
-    constexpr uint64_t getAS()const
-    {
-          uint64_t as_big{0};
-        uint64_t as{0};
-
-         for( int i=0; i<6;++i )
-         
-        {
-             ((uint8_t*)(&as_big) )[2+i] = asn[i];
-           
-        }
-    reverseBytes( (uint8_t*)&as_big, (uint8_t*)&as,8 );
-
-        return as;
-        
-    }
-*/
 
     std::string toString() const
     {
@@ -147,23 +84,8 @@ inline ScionUDPAddr parseProxyHeader(const char* buffer, size_t len)
         throw std::runtime_error("Invalid unix socket packet header");
     }
 
-    uint64_t big_ia = BigEndian::fromByte( (const uint8_t*)buffer ) ;
-  //  uint64_t _ia = reverseEndian( big_ia);
+    uint64_t big_ia = BigEndian::fromByte( (const uint8_t*)buffer ) ;  
     addr.setIA( big_ia );
-
-   /* uint16_t _isd = ISD_FROM_IA( _ia );
-    uint64_t _as = AS_FROM_IA( _ia );
-
-    addr.setISD(_isd);
-    addr.setAS( _as );*/
-
-
-    /*
-    for (size_t i = 0; i < 2; ++i)
-        addr.isd[i] = buffer[i];
-    for (size_t i = 0; i < 6; ++i)
-        addr.asn[i] = buffer[2 + i];
-    */
 
     uint32_t addrLen = *(uint32_t*)&buffer[8];
     if (addrLen == 4) {
@@ -188,12 +110,6 @@ inline ScionUDPAddr parseProxyHeader(const char* buffer, size_t len)
 inline void makeProxyHeader( char* buffer, const ScionUDPAddr& addr )
 {
 
- /* for (size_t i = 0; i < 2; ++i)
-        buffer[i] = addr.isd[i];
-    for (size_t i = 0; i < 6; ++i)
-         buffer[2 + i] = addr.asn[i] ;
-        */
-
        BigEndian::toBytes( (uint8_t*) buffer, addr.getIA() );
 
     if(addr.ip.is_v4() )
@@ -213,26 +129,92 @@ inline void makeProxyHeader( char* buffer, const ScionUDPAddr& addr )
 
 }
 
+/*!
+    \brief 
+    \details as long as there is no Kernel support for scion
+            (i.e. new address family AF_SCION and sockaddr_scion struct)
+             scion addresses can be mapped to fake IPv4 addresses 
+             in order for them to being processed by the lsquic engine
 
+ \param addr_str  string representation of an address
+                with arbitrary length
+ i.e. scion address: 
+  "19-ffaa:1:1067,192.168.2.222:5555"
+  \returns a unix sockaddr struct whose  'char sa_data[14]'
+            array is filled with the 14 byte Shake hash of the passed address
+*/
 
-  inline sockaddr hashSockaddr( const std::string& addr_str )
+  inline sockaddr hashSockaddr( const std::string& addr_str,
+   const std::optional<uint16_t>& port = std::nullopt )
   {
     sockaddr addr { .sa_family=AF_INET };   
 
-    Shake sh{32,14};
+    Shake sh{32,14};    
+    // das ist eigentlich suboptimal, weil der port so quasi zweimal in den hash eingeht
+    // er ist im string enthalten, und in sa_data[0-1]
     const uint8_t* byte_array = reinterpret_cast<const uint8_t*>(addr_str.data());
 	sh.addData(byte_array, 0, addr_str.length() );
     std::vector<unsigned char> op = sh.digest();
 
+    //  maybe use the first 2 bytes of sa_data for the port  ( and make the hash only 12 byte )
+    // as with sockaddr_in ('   in_port_t sin_port;			/* Port number.  */ ')
+    // and sockaddr_in6 (in_port_t sin6_port;	/* Transport layer port # */)
+
+    if( !port )
+    {
     for( int i=0; auto c : op )
     {
         addr.sa_data[i++] = c;
     }
+    }else
+    {
+        addr.sa_data[0] = ((uint8_t*)(&*port))[0];
+        addr.sa_data[1] = ((uint8_t*)(&*port))[1];
+    for( int i=2; i< 14; ++i)
+    {
+        addr.sa_data[i] =  op[i];
+    }
+    }
 
     return addr;
   }
-    inline sockaddr hashSockaddr( const Pan::udp::Endpoint& endpoint )
-  {return hashSockaddr(endpoint.toString()); }
+
+inline sockaddr hashSockaddr( uint64_t ia, uint16_t port, const boost::asio::ip::address & host )
+{
+    sockaddr addr{.sa_family = AF_INET };
+
+    addr.sa_data[0] = ((uint8_t*)(&port))[0];
+    addr.sa_data[1] = ((uint8_t*)(&port))[1];
+
+    addr.sa_data[2] = ((uint8_t*)(&ia))[0];
+    addr.sa_data[3] = ((uint8_t*)(&ia))[1];
+    addr.sa_data[4] = ((uint8_t*)(&ia))[2];    
+    addr.sa_data[5] = ((uint8_t*)(&ia))[3];
+    addr.sa_data[6] = ((uint8_t*)(&ia))[4];
+    addr.sa_data[7] = ((uint8_t*)(&ia))[5];
+    addr.sa_data[8] = ((uint8_t*)(&ia))[6];
+    addr.sa_data[9] = ((uint8_t*)(&ia))[7];
+
+    if(host.is_v4() )
+    {   auto ip = host.to_v4().to_bytes();
+        addr.sa_data[10] = ip[0];
+        addr.sa_data[11] = ip[1];
+        addr.sa_data[12] = ip[2];
+        addr.sa_data[13] = ip[3];
+    } else
+    {
+        //  cant fit 16 byte IPv6 address in remaining 4 byte storage
+        throw std::runtime_error( "unsupported operation: scion address with IPv6 host part ");
+    }
+
+    return addr;
+}
+
+inline sockaddr hashSockaddr( const Pan::udp::Endpoint& endpoint )
+{
+  //  return hashSockaddr(endpoint.toString()); 
+  return hashSockaddr(endpoint.getIA(), endpoint.getPort() , endpoint.getIP() );
+}
 
 
   std::string sockaddr2str( const sockaddr& add )

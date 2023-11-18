@@ -9,7 +9,11 @@ set_property(TARGET pan_cpp PROPERTY CXX_STANDARD 17)
 set_target_properties(pan_cpp PROPERTIES OUTPUT_NAME pancpp)
 set_target_properties(pan_cpp PROPERTIES DEBUG_POSTFIX "d")
 target_link_libraries(pan_cpp PUBLIC pan_c)
-#target_include_directories(pan_cpp PUBLIC "${CMAKE_SOURCE_DIR}/include")
+target_include_directories(pan_cpp PUBLIC
+$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>  
+    $<INSTALL_INTERFACE:include>  # <prefix>/include/mylib
+ # "${PROJECT_SOURCE_DIR}/include"
+)
 
 set(PUBLIC_HEADERS
     "${CMAKE_SOURCE_DIR}/include/pan.hpp"

@@ -271,10 +271,13 @@ void connect(variant& state, stream_connect_operation& op)
   state = connecting{&op};
 }
 
+/* precondition: stream_state must be 'connecting'
+                and gets transitioned to 'open'
+*/
 void on_connect(variant& state, lsquic_stream* handle, bool is_http)
 {
   assert(std::holds_alternative<connecting>(state));
-  std::get_if<connecting>(&state)->op->defer(error_code{});
+  std::get_if<connecting>(&state)->op->defer(error_code{}); // success
   if (is_http) {
     state.emplace<open>(*handle, open::h3_tag{});
   } else {
@@ -282,16 +285,22 @@ void on_connect(variant& state, lsquic_stream* handle, bool is_http)
   }
 }
 
+/* precondition: stream_state must be 'closed'
+   and gets transitioned to 'accepting'
+*/
 void accept(variant& state, stream_accept_operation& op)
 {
   assert(std::holds_alternative<closed>(state));
   state = accepting{&op};
 }
 
+/* precondition:  stream_state must be 'accepting' and gets
+      transitioned to 'open'
+*/
 void on_accept(variant& state, lsquic_stream* handle, bool is_http)
 {
   if (std::holds_alternative<accepting>(state)) {
-    std::get_if<accepting>(&state)->op->defer(error_code{});
+    std::get_if<accepting>(&state)->op->defer(error_code{}); // success
   } else { // accept() found an incoming stream
     assert(std::holds_alternative<closed>(state));
   }

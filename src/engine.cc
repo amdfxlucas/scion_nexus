@@ -94,9 +94,13 @@ int engine_impl::send_packets(const lsquic_out_spec* specs, unsigned n_specs)
   return std::distance(specs, p);
 }
 
+/*!
+ stream api
 
-// stream api
-// precondition: conn->state must be 'closed'
+ precondition: conn->state must be 'closed'
+
+ 
+*/
 static lsquic_conn_ctx_t* on_new_conn(void* ectx, lsquic_conn_t* conn)
 {
   auto estate = static_cast<engine_impl*>(ectx);

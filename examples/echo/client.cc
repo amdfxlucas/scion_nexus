@@ -132,7 +132,8 @@ void read_file(stream_ptr stream)
   s.async_read_some(boost::asio::buffer(data),
                 //  boost::asio::transfer_at_least(1),
     [stream=std::move(stream)] (error_code ec, size_t bytes_read) {
-      if (ec) {
+      if (ec)
+      {
         if (ec != nexus::quic::stream_error::eof) {
           // should we shutdown(0) the stream for read here ?!
           std::cerr << "async_read_some returned " << ec.message() << '\n';
@@ -142,8 +143,9 @@ void read_file(stream_ptr stream)
      // std::cout << "read bytes: " << bytes << std::endl;
       // write the output bytes then start reading more
       auto& data = stream->readbuf;
-     // stream->output<< "stream read: " << bytes_read << std::endl;
+      stream->output<< "stream read: " << bytes_read << std::endl;
       stream->output.write(data.data(), bytes_read);
+      stream->output<< std::endl;
       read_file(std::move(stream));
     });
 }
