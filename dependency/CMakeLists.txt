@@ -12,6 +12,7 @@ set(BORINGSSL_LIB_decrepit decrepit)
 add_subdirectory(lsquic)
 
 add_subdirectory(pan-bindings)
+add_subdirectory(sha3)
 
 cmake_policy(SET CMP0079 NEW)
 target_include_directories(lsquic PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/lsquic/include ${BORINGSSL_INCLUDE})

@@ -1,5 +1,7 @@
 #find_package(Boost COMPONENTS thread system)
 
+find_package(sha3)
+
 
 include(FindPackageHandleStandardArgs)
 
