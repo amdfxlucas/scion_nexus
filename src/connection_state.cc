@@ -66,12 +66,12 @@ udp::endpoint remote_endpoint(const variant& state, error_code& ec)
   
   \details precondition: connection_state must be 'closed' and gets transitioned to 'open'
 */
-void on_connect(variant& state, lsquic_conn* handle)
+void on_connect(variant& state, incoming_connection&& conn )
 { 
-  //qDebug("");
-  assert(handle);
+
+  assert(conn.handle);
   assert(std::holds_alternative<closed>(state));
-  state.emplace<open>(*handle); // INCOMING_UNINITIALIZED
+  state.emplace<open>(std::move(conn ));
 }
 
 /*!
@@ -119,19 +119,18 @@ void accept_incoming(variant& state, incoming_connection&& incoming)
   assert(std::holds_alternative<closed>(state));
   assert(incoming.handle);
   state.emplace<open>( std::move( incoming ) );
- // auto& o = state.emplace<open>(*incoming.handle);
-  //o.incoming_streams = std::move(incoming.incoming_streams);
+
 }
 
 /*!
 transit state from accepting -> open
 */
-void on_accept(variant& state, lsquic_conn* handle)
+void on_accept(variant& state, incoming_connection&& conn)
 {
-  assert(handle);
+  assert(conn.handle);
   assert(std::holds_alternative<accepting>(state));
   std::get_if<accepting>(&state)->op->defer(error_code{}); // success
-  state.emplace<open>(*handle); // INCOMING_UNINITIALIZED
+ state.emplace<open>(std::move(conn));
 }
 
 /*!

@@ -72,12 +72,6 @@ struct open {
   {
 
   }
-
-  explicit open(lsquic_conn& handle) noexcept 
-  : handle(handle) 
-  //,  incoming_streams(3) //  not necessary - set in connection_state::accept_incoming() from incoming_connection
-
-  {}
 };
 
 /// the connection is processing open streams but not initiating or accepting
@@ -121,11 +115,11 @@ connection_id id(const variant& state, error_code& ec);
 udp::endpoint remote_endpoint(const variant& state, error_code& ec);
 
 // connection events
-void on_connect(variant& state, lsquic_conn* handle);
+void on_connect(variant& state, incoming_connection&& handle);
 void on_handshake(variant& state, int status);
 void accept(variant& state, accept_operation& op);
 void accept_incoming(variant& state, incoming_connection&& incoming);
-void on_accept(variant& state, lsquic_conn* handle);
+void on_accept(variant& state, incoming_connection&& handle);
 
 bool stream_connect(variant& state, stream_connect_operation& op);
 stream_impl* on_stream_connect(variant& state, lsquic_stream* handle,

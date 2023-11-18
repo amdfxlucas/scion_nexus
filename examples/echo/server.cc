@@ -104,12 +104,15 @@ void on_stream_read(std::unique_ptr<echo_stream> s,
                     error_code ec, size_t bytes_read)
 {
   auto& stream = s->stream;
+  
   if( bytes_read == 0 && ec.value() == 0) // success
   { ec = nexus::quic::stream_error::eof;
      std::cout << "NO BYTES READ FROM STREAM err: "
      <<ec.message() << " close stream" << std::endl; 
+     
   }
-  if (ec == nexus::quic::stream_error::eof) {
+  if (ec == nexus::quic::stream_error::eof )
+   {
     // done reading and all writes were submitted, wait for the acks and shut
     // down gracefully
     std::cout << "about to close stream" << std::endl;
@@ -139,11 +142,6 @@ void on_stream_read(std::unique_ptr<echo_stream> s,
                                   boost::asio::transfer_at_least(1),
     [s=std::move(s)] (error_code ec, size_t bytes_written) mutable {
 
-     // std::cout <<"wrote: \"" ;
-     // std::ranges::copy(  s->buffer|std::ranges::views::take(bytes_written) ,
-    //  std::ostream_iterator<char>(std::cout, "") );
-    //  std::cout << "\""<< std::endl;
-
       on_stream_write(std::move(s), ec, bytes_written);
     });
 }
@@ -162,16 +160,12 @@ void on_stream_write(std::unique_ptr<echo_stream> s,
                         //  boost::asio::transfer_at_least(1),
     [s=std::move(s)] (error_code ec, size_t bytes_read) mutable {
 
-      // std::cout <<"stream read: " << bytes_read<<  " \n" ;
-      // std::ranges::copy(  s->buffer|std::ranges::views::take(bytes_read) ,
-      // std::ostream_iterator<char>(std::cout, "") );
-  //    std::cout << "\""<< std::endl;
 
-      if(bytes_read == 0)
+    /*  if(bytes_read == 0)
       {
         std::cout << "NOTHING TO READ ON STREAM err_code: "
          <<  ec<<" " << ec.message() << std::endl;
-      }
+      } */
 
       on_stream_read(std::move(s), ec, bytes_read);
     });
