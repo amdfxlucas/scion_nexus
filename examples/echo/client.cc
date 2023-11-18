@@ -116,7 +116,8 @@ void write_file(stream_ptr stream)
         << " bytes: " << bytes_written  << '\n';
       } else if (!stream->input) { // no more input, done writing
         std::cout << "<< No more input ! >>" << std::endl;
-        stream->stream.shutdown(1);
+        stream->stream.shutdown(1); // close stream for writing
+
       } else {
         write_file(std::move(stream));
       }
@@ -131,8 +132,10 @@ void read_file(stream_ptr stream)
   s.async_read_some(boost::asio::buffer(data),
                 //  boost::asio::transfer_at_least(1),
     [stream=std::move(stream)] (error_code ec, size_t bytes_read) {
-      if (ec) {
+      if (ec)
+      {
         if (ec != nexus::quic::stream_error::eof) {
+          // should we shutdown(0) the stream for read here ?!
           std::cerr << "async_read_some returned " << ec.message() << '\n';
         }
         return;
@@ -140,7 +143,9 @@ void read_file(stream_ptr stream)
      // std::cout << "read bytes: " << bytes << std::endl;
       // write the output bytes then start reading more
       auto& data = stream->readbuf;
+      stream->output<< "stream read: " << bytes_read << std::endl;
       stream->output.write(data.data(), bytes_read);
+      stream->output<< std::endl;
       read_file(std::move(stream));
     });
 }
@@ -212,7 +217,9 @@ int main(int argc, char** argv)
   if(ec) throw std::runtime_error("CA file not found");
 
   auto global = nexus::global::init_client();
-  global.log_to_stderr( "debug");
+  #ifdef LSQUIC_LOG
+  global.log_to_stderr( LSQUIC_LOG_LVL );
+  #endif
 
   std::shared_ptr<nexus::quic::client> client;
   connection_ptr conn;

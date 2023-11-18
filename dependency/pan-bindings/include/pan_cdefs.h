@@ -32,6 +32,7 @@
 typedef const void cvoid_t;
 typedef const char cchar_t;
 typedef const uint8_t cuint8_t;
+typedef const uint16_t cuint16_t;
 typedef const uint64_t cuint64_t;
 typedef uint32_t PanError;
 typedef uintptr_t PanUDPAddr;
@@ -45,6 +46,7 @@ typedef uintptr_t PanSelector;
 typedef uintptr_t PanReplySelector;
 typedef uintptr_t PanConnSockAdapter;
 typedef uintptr_t PanListenSockAdapter;
+typedef uintptr_t PanLoopbackListenSockAdapter;
 
 ////////////
 // Policy //

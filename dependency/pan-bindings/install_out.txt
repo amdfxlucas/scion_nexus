@@ -1,0 +1,14 @@
+Install the project...
+-- Install configuration: "Release"
+-- Up-to-date: /usr/local/include/pan/pan.h
+-- Up-to-date: /usr/local/include/pan/pan_cdefs.h
+-- Up-to-date: /usr/local/lib/libpan.a
+-- Installing: /usr/local/lib/cmake/pan/panConfig.cmake
+-- Installing: /usr/local/lib/cmake/pan/panConfigVersion.cmake
+-- Up-to-date: /usr/local/lib/libpancpp.a
+-- Up-to-date: /usr/local/include/pan/pan.hpp
+-- Up-to-date: /usr/local/include/pan/go_handle.hpp
+-- Up-to-date: /usr/local/cmake/pan/pancppTargets.cmake
+-- Up-to-date: /usr/local/cmake/pan/pancppTargets-release.cmake
+-- Up-to-date: /usr/local/lib/cmake/pan/pancppConfig.cmake
+-- Up-to-date: /usr/local/lib/cmake/pan/pancppConfigVersion.cmake

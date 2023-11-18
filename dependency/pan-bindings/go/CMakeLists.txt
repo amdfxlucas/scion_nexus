@@ -15,6 +15,8 @@ set(CGO_HEADER_OUT "${CMAKE_CURRENT_BINARY_DIR}/${HEADER}")
 set(STATIC_LIBRARY ${OUTPUT_NAME}.a)
 set(SHARED_LIBRARY ${OUTPUT_NAME}.so)
 
+
+
 add_custom_target(pan ALL DEPENDS ${STATIC_LIBRARY} ${INCLUDE_HEADER})
 add_custom_command(
     OUTPUT ${STATIC_LIBRARY}
@@ -37,6 +39,7 @@ add_dependencies(pan_c pan)
 set_target_properties(pan_c PROPERTIES
     IMPORTED_LOCATION ${CMAKE_CURRENT_BINARY_DIR}/${STATIC_LIBRARY}
     INTERFACE_INCLUDE_DIRECTORIES ${CMAKE_SOURCE_DIR}/include)
+
 
 if (${BUILD_SHARED_LIBS})
 add_custom_target(cgo_pan_shared ALL DEPENDS ${SHARED_LIBRARY})

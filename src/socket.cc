@@ -31,14 +31,14 @@ namespace nexus::quic
     }
 
     // not supported with unix domain sockets
-    if constexpr (!std::is_same_v<socket_t, asio::local::datagram_protocol::socket>)
+    if constexpr (!std::is_same_v<socket_t, boost::asio::local::datagram_protocol::socket>)
       if (sock.set_option(receive_ecn{true}, ec); ec)
       {
         return;
       }
 
     // not supported with unix domain sockets
-    if constexpr (!std::is_same_v<socket_t, asio::local::datagram_protocol::socket>)
+    if constexpr (!std::is_same_v<socket_t, boost::asio::local::datagram_protocol::socket>)
       if (is_server)
       {
         ec = nexus::detail::set_options(sock, receive_dstaddr{true},
@@ -127,10 +127,11 @@ namespace nexus::quic
     {
       auto lock = std::unique_lock{engine.mutex};
       incoming_connections.set_capacity(backlog);
+      assert( incoming_connections.capacity() == backlog );
       start_recv();
     }
 
-    void socket_impl::cancel_on_signal(const system::error_code &error, int signal)
+    void socket_impl::cancel_on_signal(const boost::system::error_code &error, int signal)
     {
       if (error)
       {
@@ -152,7 +153,7 @@ namespace nexus::quic
 
     void socket_impl::prepare_scion_client(
         const Pan::udp::Endpoint &remote,
-        std::function<void(const system::error_code &err)> on_connected)
+        std::function<void(const boost::system::error_code &err)> on_connected)
     {
       m_conn = std::make_shared<Pan::udp::Conn>();
       // m_conn_adapter = std::make_shared<Pan::udp::ConnSockAdapter>();
@@ -167,7 +168,7 @@ namespace nexus::quic
      */
 
       using namespace std::placeholders;
-      using asio::local::datagram_protocol;
+      using boost::asio::local::datagram_protocol;
       srand(time(0));
       auto rnd = rand();
       m_go_path = std::format("/tmp/scion_async_client_go_{}.sock", rnd);
@@ -192,34 +193,22 @@ namespace nexus::quic
       std::get<pan_sock_t>(socket).bind(datagram_protocol::endpoint(m_path));
       m_conn_adapter = std::make_shared<Pan::udp::ConnSockAdapter>(m_conn->createSockAdapter(m_go_path.c_str(), m_path.c_str()));
 
-      std::cout << "client unix domain fd: " << std::get<pan_sock_t>(socket).native_handle() << std::endl;
-
-      std::get<pan_sock_t>(socket).async_connect(
+    /*  std::get<pan_sock_t>(socket).async_connect(
           datagram_protocol::endpoint(m_go_path),
           on_connected
           // std::bind(&Client::connected, this, _1)
       );
+      */
 
-      // ioContext.run();
-      //  socket.close();
-      //  adapter.close();
+  std::get<pan_sock_t>(socket).connect(
+          datagram_protocol::endpoint(m_go_path) );
+
       //  std::remove(socketPath);
 
-      /*void connected(const system::error_code& error)
-      {
-          using namespace std::placeholders;
 
-          if (error) {
-              std::cerr << "ASIO error: " << error.message() << std::endl;
-              return;
-          }
-
-        //  socket.async_send(asio::buffer(buffer), std::bind(&Client::sent, this, _1, _2));
-      }
-  */
     }
 
-    void socket_impl::prepare_scion_server(std::function<void(const system::error_code &err)> on_connected)
+    void socket_impl::prepare_scion_server(std::function<void(const boost::system::error_code &err)> on_connected)
     {
       m_listen_conn = std::make_shared<Pan::udp::ListenConn>();
       srand(time(0));
@@ -230,7 +219,7 @@ namespace nexus::quic
       m_listen_conn->listen(local_address().c_str());
       std::cout << "ListenConn listening at: " << m_listen_conn->getLocalEndpoint().toString() << std::endl;
 
-      using asio::local::datagram_protocol;
+      using boost::asio::local::datagram_protocol;
       socket = datagram_protocol::socket(get_executor());
 
       std::get<pan_sock_t>(socket).open();
@@ -251,13 +240,16 @@ namespace nexus::quic
 
       std::cout << "unix domain sock fd: " << std::get<pan_sock_t>(socket).native_handle() << std::endl;
 
-      std::get<pan_sock_t>(socket).async_connect(
+    /*  std::get<pan_sock_t>(socket).async_connect(
           datagram_protocol::endpoint(m_go_path.c_str()),
           // std::bind(&Server::connected, this, std::placeholders::_1)
           on_connected
           // std::bind(&Client::connected, this, _1)
 
-      );
+      );*/
+
+        std::get<pan_sock_t>(socket).connect(
+          datagram_protocol::endpoint(m_go_path.c_str()) );
 
       // m_signals.async_wait(std::bind(&Server::cancel, this, std::placeholders::_1, std::placeholders::_2));
 
@@ -334,15 +326,37 @@ namespace nexus::quic
 
       start_recv();
     }
-    // precondition: connection_impl::state is 'closed'
+
+    /*!
+    \brief internal implementation of stream_api for outgoing connections
+    lsquic_conn_ctx_t* on_new_conn(void* ectx, lsquic_conn_t* conn)
+
+     precondition: connection_impl::state is 'closed'
+    */
     void socket_impl::on_connect(connection_impl &c, lsquic_conn_t *conn)
-    {
-      HANDLER_LOCATION;
-      qDebug("invoked");
-      connection_state::on_connect(c.state, conn);
+    {     
+      connection_state::on_connect(c.state, incoming_connection{conn,engine.max_streams_per_connection});
       open_connections.push_back(c);
     }
 
+/*!
+  \brief internal implementation of socket_impl::async_connect
+
+        void acceptor::accept(connection& conn, error_code& ec) for quic
+        void acceptor::accept(server_connection& conn, error_code& ec) for h3
+  \details
+  IF the socket has incoming_connections:
+    dequeue an incoming_conn from the queue,
+    transit its state from 'closed' to 'open'
+    place it in the open_connections queue
+  ELSE
+
+    the connection's connection state
+    is transitioned from 'closed' to 'open' 
+    and it is placed in the accepting_connections queue
+
+
+*/
     void socket_impl::accept(connection_impl &c, accept_operation &op)
     {
       auto lock = std::unique_lock{engine.mutex};
@@ -364,6 +378,10 @@ namespace nexus::quic
       engine.process(lock);
     }
 
+  /*!
+  \brief internal implementation of stream_api for incoming connections
+  lsquic_conn_ctx_t* on_new_conn(void* ectx, lsquic_conn_t* conn) 
+  */
     connection_context *socket_impl::on_accept(lsquic_conn_t *conn)
     {
       assert(conn);
@@ -375,13 +393,13 @@ namespace nexus::quic
           ::lsquic_conn_close(conn);
           return nullptr;
         }
-        incoming_connections.push_back({conn, engine.max_streams_per_connection});
+        incoming_connections.push_back(incoming_connection{conn, engine.max_streams_per_connection});
         return &incoming_connections.back();
       }
       auto &c = accepting_connections.front();
       list_transfer(c, accepting_connections, open_connections);
 
-      connection_state::on_accept(c.state, conn);
+      connection_state::on_accept(c.state, incoming_connection{conn,engine.max_streams_per_connection} );
       return &c;
     }
 
@@ -487,13 +505,14 @@ namespace nexus::quic
     void socket_impl::on_readable()
     {
       std::array<unsigned char, 4096> buffer;
-      iovec iov;
-      iov.iov_base = buffer.data();
-      iov.iov_len = buffer.size();
+    
 
       error_code ec;
       for (;;)
       {
+        iovec iov;
+        iov.iov_base = buffer.data();
+        iov.iov_len = buffer.size();
         udp::endpoint peer;
         sockaddr_union self;
         int ecn = 0;
@@ -527,6 +546,11 @@ namespace nexus::quic
       auto lock = std::scoped_lock{engine.mutex};
       ::lsquic_engine_send_unsent_packets(engine.handle.get());
     }
+
+/*!
+ \brief internal implementation of 
+ int engine_impl::send_packets(const lsquic_out_spec* specs, unsigned n_specs)
+*/
 
     auto socket_impl::send_packets(const lsquic_out_spec *begin,
                                    const lsquic_out_spec *end,
@@ -592,9 +616,9 @@ namespace nexus::quic
         {
           int nhandle = psock->native_handle();
 
-          // what if iovlen > 1 ?! do i have to concatenate the vectors ?!
-          //   msg.msg_iov = p->iov;
-          // msg.msg_iovlen = p->iovlen;
+        
+
+
           auto endp = psock->local_endpoint();
           msg.msg_name = const_cast<void *>(static_cast<const void *>(endp.data()));
 
@@ -611,30 +635,49 @@ namespace nexus::quic
 
             // assert( *p->dest_sa == *m_fake_endp.data()  );
 
+            std::array<char, 32> proxy_hdr_buff;
+            iovec prepended_hdr;
+            prepended_hdr.iov_base = proxy_hdr_buff.data();
+            prepended_hdr.iov_len = 32;
+
             auto scion_remote = addrMapper::instance().lookupHash(*p->dest_sa);
+            makeProxyHeader( proxy_hdr_buff.data(), **scion_remote); // might throw bad optional access
 
-            qDebug("lookup scion_remote: " << (*scion_remote)->toString());
+            std::vector<iovec> io(p->iovlen + 1);
+            io[0] = prepended_hdr;
+            for (int i = 0; i < p->iovlen; ++i)
+            {
+              io[i + 1] = p->iov[i];
+            }
 
-            std::vector<char> buff; // contains original data plus appended header
+            msg.msg_iov = io.data();    // p->iov;
+            msg.msg_iovlen = io.size(); // p->iovlen;
+
+        //    qDebug("lookup scion_remote: " << (*scion_remote)->toString());
+
+          
             auto new_len = msg.msg_iov->iov_len + 32;
-            buff.resize(new_len, 0);
+          
 
-            makeProxyHeader(buff.data(), **scion_remote); // might throw bad optional access
+            
 
-            std::memcpy(buff.data() + 32, msg.msg_iov->iov_base, msg.msg_iov->iov_len);
+         //   std::memcpy(buff.data() + 32, msg.msg_iov->iov_base, msg.msg_iov->iov_len);
 
-            msg.msg_iov->iov_base = buff.data();
-            msg.msg_iov->iov_len = new_len;
+        //    msg.msg_iov->iov_base = buff.data();
+        //    msg.msg_iov->iov_len = new_len;
             // msg.msg_iovlen = new_len;
 
-            // err_send = ::sendmsg(nhandle, &msg, 0);           // operation not permitted !!
+        
 
             qDebug(" send: " << new_len << " bytes");
             // auto sock_endp =  asio::local::datagram_protocol::endpoint(m_go_path);
             //  err_send = send(nhandle, msg.msg_iov, msg.msg_iov->iov_len , 0);
-            err_send = send(nhandle, buff.data(), new_len, 0);
-            // maybe i can call send() twice -> fst for the 32 byte header and snd time for the payload
-            // err_send = sendto(nhandle, buff.data(), new_len,0,sock_endp.data(), sock_endp.size() );
+
+          //  err_send = ::sendmsg(nhandle, &msg, MSG_DONTWAIT );           // operation not permitted !!
+            //err_send = send(nhandle, buff.data(), new_len, 0);
+
+            err_send = writev( nhandle,msg.msg_iov, msg.msg_iovlen );
+
           }
           else if (is_client())
           {
@@ -642,7 +685,8 @@ namespace nexus::quic
 
             auto payload_len = msg.msg_iov->iov_len;
             qDebug("send: " << payload_len << " bytes");
-            err_send = send(nhandle, msg.msg_iov->iov_base, payload_len, 0);
+             err_send = send(nhandle, msg.msg_iov->iov_base, payload_len, 0);
+            // err_send = ::sendmsg(nhandle, &msg, MSG_DONTWAIT );
           }
         }
 

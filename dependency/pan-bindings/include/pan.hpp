@@ -25,7 +25,7 @@
 #include <boost/asio.hpp>
 
 #include "go_handle.hpp"
-using namespace boost;
+
 
 namespace Pan {
 
@@ -205,7 +205,7 @@ private:
 };
 
 namespace udp {
-
+using namespace boost;
 class Endpoint final
 {
 public:
@@ -266,7 +266,7 @@ public:
     void close() noexcept;
 
 private:
-    ListenSockAdapter(GoHandle handle);
+    ListenSockAdapter(GoHandle handle) noexcept;
     friend class ListenConn;
 
 private:
@@ -318,7 +318,7 @@ public:
     std::size_t writeToVia(asio::const_buffer buffer, const Endpoint& to, const Path& path, std::error_code& ec) noexcept;
 
     ListenSockAdapter createSockAdapter(const char* goSocketPath, const char* cSocketPath);
-    ListenSockAdapter createSockAdapter(const char* goSocketPath, const char* cSocketPath, std::error_code &ec);
+    ListenSockAdapter createSockAdapter(const char* goSocketPath, const char* cSocketPath, std::error_code &ec) noexcept;
 
 private:
     GoHandle h;
@@ -349,7 +349,7 @@ public:
     void close() noexcept;
 
 private:
-    ConnSockAdapter(GoHandle handle);
+    ConnSockAdapter(GoHandle handle) noexcept;
     friend class Conn;
 
 private:

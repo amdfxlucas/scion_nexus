@@ -33,7 +33,7 @@ struct connection_impl : public connection_context,
   udp::endpoint remote_endpoint(error_code& ec) const;
 
   void connect(stream_connect_operation& op);
-  stream_impl* on_connect(lsquic_stream* stream);
+  stream_impl* on_connect(lsquic_stream* stream); 
 
   template <typename Stream, typename CompletionToken>
   requires requires { std::is_invocable_v<CompletionToken,error_code>; }

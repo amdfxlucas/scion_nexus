@@ -41,6 +41,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"runtime/cgo"
@@ -50,6 +51,16 @@ import (
 	"github.com/netsec-ethz/scion-apps/pkg/pan"
 	"inet.af/netaddr"
 )
+
+type Debug bool
+
+func (d Debug) Printf(s string, a ...interface{}) {
+	if d {
+		fmt.Printf(s+"\n", a...)
+	}
+}
+
+var dbg Debug = false // eqivalent of '#ifndef NDEBUG in C
 
 const ADDR_HDR_SIZE = 32
 
@@ -1011,6 +1022,153 @@ func PanConnClose(conn C.PanConn) C.PanError {
 // ListenSockAdapter //
 ///////////////////////
 
+/*
+\param from_port  listen port of the Go -side socket
+\param to_port		listen port of the C -side socket
+*/
+func NewLoopbackListenSockAdapter(pc pan.ListenConn, from_port, to_port uint16) (*LoopbackListenSockAdapter, error) {
+	listen_addr := fmt.Sprintf("127.0.0.1:%v", from_port)
+
+	listen, err := net.ResolveUDPAddr("udp", listen_addr)
+	if err != nil {
+		return nil, err
+	}
+	remote, err := net.ResolveUDPAddr("udp", fmt.Sprintf("127.0.0.1:%v", to_port)) // client_addr
+	if err != nil {
+		return nil, err
+	}
+
+	ip_conn, err := net.ListenUDP("udp", listen)
+	if err != nil {
+		return nil, err
+	}
+
+	adapter := &LoopbackListenSockAdapter{
+		pan_conn:    pc,
+		ip_conn:     ip_conn,
+		ip_remote:   remote,
+		listen_addr: listen_addr,
+	}
+
+	go adapter.panToIP()
+	go adapter.ipToPan()
+
+	return adapter, nil
+}
+
+/*
+reads packets from pan_conn
+appends header to it (containing the scion sender address )
+sends packet through ip_conn to ip_remote address
+
+reads packet from ip_conn
+removed header from it (contains scion_remote address)
+sends packet through pan_conn to scion_remote address
+*/
+type LoopbackListenSockAdapter struct {
+	pan_conn    pan.ListenConn
+	ip_conn     *net.UDPConn
+	ip_remote   *net.UDPAddr
+	listen_addr string // "127.0.0.1: port "
+}
+
+func (ls *LoopbackListenSockAdapter) Close() error {
+	ls.pan_conn.Close()
+	ls.ip_conn.Close()
+	return nil
+}
+
+func (ls *LoopbackListenSockAdapter) panToIP() {
+	var buffer = make([]byte, 4096)
+	for {
+		// Read from network
+		read, from, err := ls.pan_conn.ReadFrom(buffer[ADDR_HDR_SIZE:])
+		if err != nil {
+			return
+		}
+
+		// Prepend from header to received bytes
+		pan_from, ok := from.(pan.UDPAddr)
+		if !ok {
+			continue
+		}
+		binary.BigEndian.PutUint64(buffer, (uint64)(pan_from.IA))
+		if pan_from.IP.Is4() {
+			buffer[8] = 4
+			for i, b := range pan_from.IP.As4() {
+				buffer[12+i] = b
+			}
+		} else {
+			buffer[8] = 16
+			for i, b := range pan_from.IP.As16() {
+				buffer[12+i] = b
+			}
+		}
+		binary.LittleEndian.PutUint16(buffer[28:30], pan_from.Port)
+		message := buffer[:ADDR_HDR_SIZE+read]
+
+		// Pass to IP socket
+		_, err = ls.ip_conn.WriteTo(message, ls.ip_remote)
+		if err != nil {
+			return
+		}
+	}
+}
+
+func (ls *LoopbackListenSockAdapter) ipToPan() {
+	var buffer = make([]byte, 4096)
+	for {
+		// Read from IP socket
+		read, _, err := ls.ip_conn.ReadFrom(buffer)
+		if err != nil {
+			return
+		}
+		if read < ADDR_HDR_SIZE {
+			continue
+		}
+
+		// Parse destination from header
+		var to pan.UDPAddr
+		to.IA = (pan.IA)(binary.BigEndian.Uint64(buffer[:8]))
+		addr_len := binary.LittleEndian.Uint32(buffer[8:12])
+		if addr_len == 4 {
+			to.IP = netaddr.IPFrom4(*(*[4]byte)(buffer[12:16]))
+		} else if addr_len == 16 {
+			to.IP = netaddr.IPFrom16(*(*[16]byte)(buffer[12:28]))
+		} else {
+			continue
+		}
+		to.Port = binary.LittleEndian.Uint16(buffer[28:30])
+
+		// Pass to network socket
+		_, err = ls.pan_conn.WriteTo(buffer[ADDR_HDR_SIZE:read], to)
+		if err != nil {
+			return
+		}
+	}
+}
+
+func PanNewLoopbackListenSockAdapter(
+	pan_conn C.PanListenConn,
+	listen_port *C.uint16_t,
+	client_port *C.uint16_t,
+	adapter *C.PanLoopbackListenSockAdapter) C.PanError {
+
+	ls, err := NewLoopbackListenSockAdapter(
+		cgo.Handle(pan_conn).Value().(pan.ListenConn),
+		uint16(C.ushort(*listen_port)),
+		uint16(C.ushort(*client_port)))
+	if err != nil {
+		return C.PAN_ERR_FAILED
+	}
+
+	ptr := (*C.PanLoopbackListenSockAdapter)(unsafe.Pointer(adapter))
+	*ptr = C.PanLoopbackListenSockAdapter(cgo.NewHandle(ls))
+	return C.PAN_ERR_OK
+}
+
+//------------------------------------------------------------
+
 type ListenSockAdapter struct {
 	pan_conn    pan.ListenConn
 	unix_conn   *net.UnixConn
@@ -1061,9 +1219,12 @@ func (ls *ListenSockAdapter) panToUnix() {
 	for {
 		// Read from network
 		read, from, err := ls.pan_conn.ReadFrom(buffer[ADDR_HDR_SIZE:])
+		dbg.Printf("ListenSockAdapter panToUnix: %v + %v bytes", read, ADDR_HDR_SIZE)
 		if err != nil {
 			return
 		}
+
+		dbg.Printf("unixToPan remote from: %v", from.String())
 
 		// Prepend from header to received bytes
 		pan_from, ok := from.(pan.UDPAddr)
@@ -1098,6 +1259,7 @@ func (ls *ListenSockAdapter) unixToPan() {
 	for {
 		// Read from unix socket
 		read, _, err := ls.unix_conn.ReadFromUnix(buffer)
+		dbg.Printf("ListenSockAdapter unixToPan: %v + %v bytes", read-ADDR_HDR_SIZE, ADDR_HDR_SIZE)
 		if err != nil {
 			return
 		}
@@ -1117,6 +1279,8 @@ func (ls *ListenSockAdapter) unixToPan() {
 			continue
 		}
 		to.Port = binary.LittleEndian.Uint16(buffer[28:30])
+
+		dbg.Printf("unixToPan remote to: %v", to.String())
 
 		// Pass to network socket
 		_, err = ls.pan_conn.WriteTo(buffer[ADDR_HDR_SIZE:read], to)
@@ -1238,6 +1402,7 @@ func (cs *ConnSockAdapter) panToUnix() {
 	for {
 		// Read from network
 		read, err := cs.pan_conn.Read(buffer)
+		dbg.Printf("ConnSockAdapter panToUnix: %v bytes", read)
 		if err != nil {
 			return
 		}
@@ -1255,6 +1420,7 @@ func (cs *ConnSockAdapter) unixToPan() {
 	for {
 		// Read from domain socket
 		read, _, err := cs.unix_conn.ReadFromUnix(buffer)
+		dbg.Printf("ConnSockAdapter unixToPan: %v bytes", read)
 		if err != nil {
 			return
 		}

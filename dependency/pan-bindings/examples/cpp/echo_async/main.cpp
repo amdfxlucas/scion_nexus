@@ -15,7 +15,7 @@
 #include "pan.hpp"
 #include "common/message_parser.hpp"
 
-#include <asio.hpp>
+#include <boost/asio.hpp>
 #include <getopt.h>
 
 #include <array>
@@ -26,6 +26,7 @@
 #include <cstddef>
 #include <cctype>
 
+using namespace boost;
 
 static const size_t PROXY_HEADER_LEN = 32;
 
@@ -103,7 +104,7 @@ ScionUDPAddr parseProxyHeader(const char* buffer, size_t len)
     if (len < PROXY_HEADER_LEN) {
         throw std::runtime_error("Invalid unix socket packet header");
     }
-
+    // bytes 0-8 contain IA in BigEndian
     for (size_t i = 0; i < 2; ++i)
         addr.isd[i] = buffer[i];
     for (size_t i = 0; i < 6; ++i)
@@ -152,7 +153,7 @@ public:
 
     int listen(Arguments& args)
     {
-        using namespace std::placeholders;
+      //  using namespace std::placeholders;
         using asio::local::datagram_protocol;
 
         static const char* goSocketPath = "/tmp/scion_async_server_go.sock";
@@ -167,8 +168,8 @@ public:
 
         socket.async_connect(
             datagram_protocol::endpoint(goSocketPath),
-            std::bind(&Server::connected, this, _1));
-        signals.async_wait(std::bind(&Server::cancel, this, _1, _2));
+            std::bind(&Server::connected, this, std::placeholders::_1));
+        signals.async_wait(std::bind(&Server::cancel, this, std::placeholders::_1, std::placeholders::_2));
 
         ioContext.run();
 
@@ -179,7 +180,7 @@ public:
     }
 
 private:
-    void connected(const asio::error_code& error)
+    void connected(const system::error_code& error)
     {
         using namespace std::placeholders;
 
@@ -194,7 +195,7 @@ private:
         socket.async_receive(asio::buffer(buffer), std::bind(&Server::received, this, _1, _2));
     }
 
-    void received(const asio::error_code& error, size_t bytes)
+    void received(const system::error_code& error, size_t bytes)
     {
         using namespace std::placeholders;
 
@@ -209,6 +210,9 @@ private:
             size_t dataLen = bytes - PROXY_HEADER_LEN;
             std::cout << "Received " << dataLen << " bytes from " << from << ":\n";
             printBuffer(std::cout, buffer.data() + PROXY_HEADER_LEN, dataLen) << "\n";
+
+            // buffer still contains the proxy-header here! 
+            // the ListenSockAdapter will interpret it as the destination address for the packet sent through the unix-domain socket
             socket.async_send(asio::buffer(buffer, bytes), std::bind(&Server::sent, this, _1, _2));
         }
         catch (const std::exception& e) {
@@ -220,7 +224,7 @@ private:
         }
     }
 
-    void sent(const asio::error_code& error, size_t bytes)
+    void sent(const system::error_code& error, size_t bytes)
     {
         using namespace std::placeholders;
 
@@ -234,7 +238,7 @@ private:
         socket.async_receive(asio::buffer(buffer), std::bind(&Server::received, this, _1, _2));
     }
 
-    void cancel(const asio::error_code& error, int signal)
+    void cancel(const system::error_code& error, int signal)
     {
         if (error) {
             std::cerr << "ASIO error: " << error.message() << std::endl;
@@ -251,7 +255,7 @@ private:
     Pan::udp::ListenSockAdapter adapter;
 
     asio::io_context ioContext;
-    asio::local::datagram_protocol::socket socket;
+    asio::local::datagram_protocol::socket socket; // /usr/local/include/boost/asio/local/datagram_protocol.hpp
     asio::signal_set signals;
 
     std::vector<char> buffer;
@@ -297,7 +301,7 @@ public:
     }
 
 private:
-    void connected(const asio::error_code& error)
+    void connected(const system::error_code& error)
     {
         using namespace std::placeholders;
 
@@ -309,7 +313,7 @@ private:
         socket.async_send(asio::buffer(buffer), std::bind(&Client::sent, this, _1, _2));
     }
 
-    void sent(const asio::error_code& error, size_t bytes)
+    void sent(const system::error_code& error, size_t bytes)
     {
         using namespace std::placeholders;
 
@@ -320,10 +324,19 @@ private:
 
         buffer.clear();
         buffer.resize(4096);
-        socket.async_receive(asio::buffer(buffer), std::bind(&Client::received, this, _1, _2));
+        // socket.async_receive(asio::buffer(buffer), std::bind(&Client::received, this, _1, _2));
+        socket.async_wait( boost::asio::socket_base::wait_read,   std::bind(&Client::do_receive,this,_1)   ); 
+        // this is only an experiment. it was perfectly  fine the way it was
     }
 
-    void received(const asio::error_code& error, size_t bytes)
+    void do_receive(const system::error_code& error)
+    {   using namespace std::placeholders;
+           if(error)
+            std::cout << error.message() << std::endl;
+        socket.async_receive(asio::buffer(buffer), std::bind(&Client::received, this, _1, _2) );
+    }
+
+    void received( const system::error_code& error, size_t bytes)
     {
         if (error) {
             std::cerr << "ASIO error: " << error.message() << std::endl;
