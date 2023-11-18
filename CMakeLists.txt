@@ -35,7 +35,7 @@ target_link_libraries(thread-sanitizer INTERFACE "-fsanitize=thread")
 
 add_library(nexus-headers INTERFACE)
 target_include_directories(nexus-headers INTERFACE include ${BOOST_LIBRARY_INCLUDES} dependency/pan-binding/include  )
-target_link_libraries(nexus-headers INTERFACE  pancpp ) #Boost::asio
+target_link_libraries(nexus-headers INTERFACE  pancpp )
 install(DIRECTORY include/nexus DESTINATION include)
 
 

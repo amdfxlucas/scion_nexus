@@ -14,6 +14,7 @@ inline bool operator==( const sockaddr& x, const sockaddr& y)
     return x.sa_family == y.sa_family && std::ranges::equal(y.sa_data,x.sa_data);
 }
 
+/* read scion address might look something like:
   struct sockaddr_scion
   {
     __SOCKADDR_COMMON (scion_)=AF_SCION;
@@ -25,12 +26,9 @@ inline bool operator==( const sockaddr& x, const sockaddr& y)
         sockaddr addr;
      sockaddr_in addr4;
      sockaddr_in6 addr6;   
-    };
-    
+    };   
    
-  };
-
-
+  };*/
 
 struct ScionUDPAddr
 {   ScionUDPAddr(){}
@@ -179,7 +177,10 @@ inline void makeProxyHeader( char* buffer, const ScionUDPAddr& addr )
     return addr;
   }
 
-inline sockaddr hashSockaddr( uint64_t ia, uint16_t port, const boost::asio::ip::address & host )
+/* fits a scion address with an IPv4 host part into a sockaddr struct (lossless)
+*/
+inline sockaddr scion2Sockaddr( uint64_t ia, uint16_t port,
+                     const boost::asio::ip::address & host )
 {
     sockaddr addr{.sa_family = AF_INET };
 
@@ -212,8 +213,9 @@ inline sockaddr hashSockaddr( uint64_t ia, uint16_t port, const boost::asio::ip:
 
 inline sockaddr hashSockaddr( const Pan::udp::Endpoint& endpoint )
 {
-  //  return hashSockaddr(endpoint.toString()); 
-  return hashSockaddr(endpoint.getIA(), endpoint.getPort() , endpoint.getIP() );
+   // if you want to support IPv6 host parts 
+  //  return hashSockaddr(endpoint.toString());
+  return scion2Sockaddr(endpoint.getIA(), endpoint.getPort() , endpoint.getIP() );
 }
 
 
@@ -248,9 +250,7 @@ namespace std {
                 return;
         }
         m_map.insert( {hash,remote} );
-    }
-
-    
+    }    
 
     std::optional<const ScionUDPAddr*> lookupHash( const sockaddr& hash )const
     {

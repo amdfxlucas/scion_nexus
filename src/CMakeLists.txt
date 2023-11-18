@@ -5,11 +5,9 @@ include(FindPackageHandleStandardArgs)
 
 find_library(pan_LIBRARY 
 NAMES pan pan_c libpan libpand pand
-   # HINTS "/usr/local/lib"  # "${CMAKE_PREFIX_PATH}/cmake/pan"
    HINTS "${PROJECT_SOURCE_DIR}/dependency/pan-bindings"
 	)
 find_path( pan_INCLUDE_DIR NAMES pan.h
-# HINTS "/usr/local/include/pan" 
 HINTS "${PROJECT_SOURCE_DIR}/dependency/pan-bindings/include"
 )
 
@@ -49,13 +47,12 @@ add_library(nexus ${nexus-srcs})
 #endif()
 
 target_link_libraries(nexus PUBLIC nexus-headers lsquic pancpp pan::pan sha3
-#Boost::asio
 ${Boost_LIBRARIES}
 Boost::system
 Boost::thread
 
 )
 
-target_include_directories( nexus PRIVATE /usr/local/include )
+#target_include_directories( nexus PRIVATE /usr/local/include )
 
 install(TARGETS nexus LIBRARY DESTINATION lib)

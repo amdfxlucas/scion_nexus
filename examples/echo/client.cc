@@ -102,15 +102,13 @@ void write_file(stream_ptr stream)
   auto& data = stream->writebuf;
   stream->input.read(data.data(), data.size());
   const auto bytes = stream->input.gcount();
-  
- //  std::cout << "gcount: " << bytes << std::endl;
 
   // write to stream
   auto& s = stream->stream;
   boost::asio::async_write(s, boost::asio::buffer(data.data(), bytes),
                               boost::asio::transfer_at_least(1),
     [stream=std::move(stream)] (error_code ec, size_t bytes_written ) {
-    //  [&stream] (error_code ec, size_t bytes) {
+   
       if (ec) {
         std::cerr << "async_write failed with " << ec.message() 
         << " bytes: " << bytes_written  << '\n';
@@ -140,7 +138,7 @@ void read_file(stream_ptr stream)
         }
         return;
       }
-     // std::cout << "read bytes: " << bytes << std::endl;
+     
       // write the output bytes then start reading more
       auto& data = stream->readbuf;
       stream->output<< "stream read: " << bytes_read << std::endl;
@@ -153,7 +151,6 @@ void read_file(stream_ptr stream)
 } // anonymous namespace
 
 
-// 19-ffaa:1:1067,192.168.2.222
 int main(int argc, char** argv)
 {
   const auto cfg = parse_args(argc, argv);
@@ -163,6 +160,7 @@ int main(int argc, char** argv)
 
   
   Pan::udp::Endpoint scion_remote;
+  boost::asio::ip::udp::endpoint endpoint;
 
   if(cfg.scion=="true")
   {
@@ -170,30 +168,13 @@ int main(int argc, char** argv)
     full_address.append(":");
     full_address.append( cfg.portstr );
 
-   auto add = Pan::udp::resolveUDPAddr( full_address.data() );//  cfg.hostname.data() );
-   scion_remote = add;
-
-   /* std::cout << "add: " << add.toString()
-    << " ia: "<< add.getIA() 
-    << " as: " << AS_FROM_IA( add.getIA())  
-      <<" isd: " << ISD_FROM_IA( add.getIA() ) << std::endl;
-
-    if( auto addr = ParseScionEndpoint( std::string(cfg.hostname),std::string(cfg.portstr) ); addr )
-    {      
-      scion_remote = *addr;
-      std::cout << "remote address: "<< scion_remote.toString() 
-      << " ia: "<< scion_remote.getIA() 
-      << " as: " << AS_FROM_IA(scion_remote.getIA())  
-      <<" isd: " << ISD_FROM_IA( scion_remote.getIA() ) << std::endl;
-    } else
-    {
-      throw std::runtime_error( "invalid scion address" );
-    }
-    */
+    auto add = Pan::udp::resolveUDPAddr( full_address.data() );
+    scion_remote = add;
+    
   }
 
 
-  boost::asio::ip::udp::endpoint endpoint;
+  
   if(cfg.scion == "false" )
   {   endpoint = [&] {
       auto resolver = udp::resolver{ex};
@@ -201,9 +182,7 @@ int main(int argc, char** argv)
     }();
   }
 
-  std::cout <<"client connecting to: " <<
-  // endpoint.address().to_string()
-  cfg.hostname << " : " << cfg.portstr <<std::endl;
+  std::cout <<"client connecting to: " << cfg.hostname << " : " << cfg.portstr <<std::endl;
 
   auto ssl = boost::asio::ssl::context{boost::asio::ssl::context::tlsv13};
   ::SSL_CTX_set_min_proto_version(ssl.native_handle(), TLS1_3_VERSION);
@@ -235,8 +214,7 @@ int main(int argc, char** argv)
 
        conn = connection_ptr{new echo_connection(client.get(), scion_remote, cfg.hostname)};
   }
-
-  //auto conn = connection_ptr{new echo_connection(client.get(), endpoint, cfg.hostname)};
+ 
 
   // connect a stream for each input file
   for (auto f = cfg.files_begin; f != cfg.files_end; ++f) {

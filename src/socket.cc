@@ -75,8 +75,6 @@ namespace nexus::quic
       {
         psock->cancel();
       }
-
-      // SockToPtr()->cancel();
     }
 
     socket_impl::socket_impl(engine_impl &engine, udp::socket &&sock,
@@ -85,7 +83,6 @@ namespace nexus::quic
           socket(std::move(sock)),
           ssl(ssl),
           m_signals(get_executor(), SIGINT)
-    //    local_addr( SockToPtr()->local_endpoint())
     {
       if (auto usock = std::get_if<udp::socket>(&socket))
       {
@@ -114,7 +111,6 @@ namespace nexus::quic
           local_addr(endpoint),
           m_signals(get_executor(), SIGINT)
     {
-      // socket.get<udp::socket>.local_end
       m_signals.async_wait(std::bind(&socket_impl::cancel_on_signal, this, std::placeholders::_1, std::placeholders::_2));
     }
 
@@ -127,7 +123,7 @@ namespace nexus::quic
     {
       auto lock = std::unique_lock{engine.mutex};
       incoming_connections.set_capacity(backlog);
-      assert( incoming_connections.capacity() == backlog );
+      assert(incoming_connections.capacity() == backlog);
       start_recv();
     }
 
@@ -156,16 +152,6 @@ namespace nexus::quic
         std::function<void(const boost::system::error_code &err)> on_connected)
     {
       m_conn = std::make_shared<Pan::udp::Conn>();
-      // m_conn_adapter = std::make_shared<Pan::udp::ConnSockAdapter>();
-      // socket = pan_sock_t( get_executor());
-
-      /* system::error_code eec;
-       prepare_socket( std::get<pan_sock_t>(socket) , false, eec );
-       if(eec)
-       {
-         throw std::runtime_error( eec.message() );
-       }
-     */
 
       using namespace std::placeholders;
       using boost::asio::local::datagram_protocol;
@@ -180,32 +166,19 @@ namespace nexus::quic
 
       std::get<pan_sock_t>(socket).open();
 
-      /*    system::error_code eec;
-          prepare_socket(std::get<pan_sock_t>(socket), false, eec);
-          if (eec)
-          {
-            throw std::runtime_error(eec.message());
-          }
+      std::get<pan_sock_t>(socket).bind(datagram_protocol::endpoint(m_path));
+      m_conn_adapter = std::make_shared<Pan::udp::ConnSockAdapter>(
+          m_conn->createSockAdapter(m_go_path.c_str(), m_path.c_str()));
 
+      /*  std::get<pan_sock_t>(socket).async_connect(
+            datagram_protocol::endpoint(m_go_path),
+            on_connected
+            // std::bind(&Client::connected, this, _1)
+        );
         */
 
-      // std::remove(m_path);
-      std::get<pan_sock_t>(socket).bind(datagram_protocol::endpoint(m_path));
-      m_conn_adapter = std::make_shared<Pan::udp::ConnSockAdapter>(m_conn->createSockAdapter(m_go_path.c_str(), m_path.c_str()));
-
-    /*  std::get<pan_sock_t>(socket).async_connect(
-          datagram_protocol::endpoint(m_go_path),
-          on_connected
-          // std::bind(&Client::connected, this, _1)
-      );
-      */
-
-  std::get<pan_sock_t>(socket).connect(
-          datagram_protocol::endpoint(m_go_path) );
-
-      //  std::remove(socketPath);
-
-
+      std::get<pan_sock_t>(socket).connect(
+          datagram_protocol::endpoint(m_go_path));
     }
 
     void socket_impl::prepare_scion_server(std::function<void(const boost::system::error_code &err)> on_connected)
@@ -217,51 +190,31 @@ namespace nexus::quic
       m_path = std::format("/tmp/scion_async_server_{}.sock", rnd);
 
       m_listen_conn->listen(local_address().c_str());
-      std::cout << "ListenConn listening at: " << m_listen_conn->getLocalEndpoint().toString() << std::endl;
+      std::cout << "ListenConn listening at: " 
+        << m_listen_conn->getLocalEndpoint().toString() << std::endl;
 
       using boost::asio::local::datagram_protocol;
       socket = datagram_protocol::socket(get_executor());
 
       std::get<pan_sock_t>(socket).open();
 
-      /*      system::error_code eec;
-            prepare_socket(std::get<pan_sock_t>(socket), true, eec);
-            if (eec)
-            {
-              throw std::runtime_error(eec.message());
-            }
-      */
-
-      // std::remove(socketPath);
-
       std::get<pan_sock_t>(socket).bind(datagram_protocol::endpoint(m_path.c_str()));
 
-      m_listen_sock_adapter = std::make_shared<Pan::udp::ListenSockAdapter>(m_listen_conn->createSockAdapter(m_go_path.c_str(), m_path.c_str()));
+      m_listen_sock_adapter = std::make_shared<Pan::udp::ListenSockAdapter>(
+            m_listen_conn->createSockAdapter(m_go_path.c_str(), m_path.c_str()));
 
-      std::cout << "unix domain sock fd: " << std::get<pan_sock_t>(socket).native_handle() << std::endl;
+      /*  std::get<pan_sock_t>(socket).async_connect(
+            datagram_protocol::endpoint(m_go_path.c_str()),
+            // std::bind(&Server::connected, this, std::placeholders::_1)
+            on_connected
+            // std::bind(&Client::connected, this, _1)
 
-    /*  std::get<pan_sock_t>(socket).async_connect(
-          datagram_protocol::endpoint(m_go_path.c_str()),
-          // std::bind(&Server::connected, this, std::placeholders::_1)
-          on_connected
-          // std::bind(&Client::connected, this, _1)
+        );*/
 
-      );*/
-
-        std::get<pan_sock_t>(socket).connect(
-          datagram_protocol::endpoint(m_go_path.c_str()) );
-
-      // m_signals.async_wait(std::bind(&Server::cancel, this, std::placeholders::_1, std::placeholders::_2));
-
-      //        ioContext.run();
-
-      //      socket.close();
-      //     adapter.close();
-      // std::remove( m_path );
+      std::get<pan_sock_t>(socket).connect(
+          datagram_protocol::endpoint(m_go_path.c_str()));
     }
 
-    /* called by scion_client ctor
-     */
     void socket_impl::connect(connection_impl &c,
                               const Pan::udp::Endpoint &endpoint,
                               const std::string_view &hostname)
@@ -274,31 +227,12 @@ namespace nexus::quic
         qDebug("connect remote: " << remote.toString());
 
         // sockaddr hash = hashSockaddr(endpoint);
-        //   addrMapper::instance().insertMapping(hash, remote);
+        //  addrMapper::instance().insertMapping(hash, remote);
 
         addrMapper::instance().insertMapping(*reinterpret_cast<const sockaddr *>(m_fake_endp.data()), remote);
 
-        // auto* ptr_data = std::get<pan_sock_t>(socket).local_endpoint().data();
-        // asio::local::datagram_protocol::endpoint remote(m_go_path);
-
-        // udp::endpoint trick2{ endpoint.getIP()};
-
-        //   auto before_fam = ptr_data->sa_family;
-        // auto before_dat = ptr_data->sa_data;
-        //  ptr_data->sa_family= AF_INET;
-
-        // udp::endpoint trick{ reinterpret_cast<udp::endpoint*>(&remote) };
-
-        connect_impl(c, // remote.data(),
-                        // ptr_data,
-                     //  &hash,
-                     m_fake_endp.data(),
-                     hostname);
-
-        //       ptr_data->sa_family = before_fam;
+        connect_impl(c, m_fake_endp.data(), hostname);
       }();
-
-      // connect_impl(c, std::get<pan_sock_t>(socket).local_endpoint().data() ,hostname);
     }
 
     void socket_impl::connect(connection_impl &c,
@@ -334,29 +268,29 @@ namespace nexus::quic
      precondition: connection_impl::state is 'closed'
     */
     void socket_impl::on_connect(connection_impl &c, lsquic_conn_t *conn)
-    {     
-      connection_state::on_connect(c.state, incoming_connection{conn,engine.max_streams_per_connection});
+    {
+      connection_state::on_connect(c.state, incoming_connection{conn, engine.max_streams_per_connection});
       open_connections.push_back(c);
     }
 
-/*!
-  \brief internal implementation of socket_impl::async_connect
+    /*!
+      \brief internal implementation of socket_impl::async_connect
 
-        void acceptor::accept(connection& conn, error_code& ec) for quic
-        void acceptor::accept(server_connection& conn, error_code& ec) for h3
-  \details
-  IF the socket has incoming_connections:
-    dequeue an incoming_conn from the queue,
-    transit its state from 'closed' to 'open'
-    place it in the open_connections queue
-  ELSE
+            void acceptor::accept(connection& conn, error_code& ec) for quic
+            void acceptor::accept(server_connection& conn, error_code& ec) for h3
+      \details
+      IF the socket has incoming_connections:
+        dequeue an incoming_conn from the queue,
+        transit its state from 'closed' to 'open'
+        place it in the open_connections queue
+      ELSE
 
-    the connection's connection state
-    is transitioned from 'closed' to 'open' 
-    and it is placed in the accepting_connections queue
+        the connection's connection state
+        is transitioned from 'closed' to 'open'
+        and it is placed in the accepting_connections queue
 
 
-*/
+    */
     void socket_impl::accept(connection_impl &c, accept_operation &op)
     {
       auto lock = std::unique_lock{engine.mutex};
@@ -378,10 +312,10 @@ namespace nexus::quic
       engine.process(lock);
     }
 
-  /*!
-  \brief internal implementation of stream_api for incoming connections
-  lsquic_conn_ctx_t* on_new_conn(void* ectx, lsquic_conn_t* conn) 
-  */
+    /*!
+    \brief internal implementation of stream_api for incoming connections
+    lsquic_conn_ctx_t* on_new_conn(void* ectx, lsquic_conn_t* conn)
+    */
     connection_context *socket_impl::on_accept(lsquic_conn_t *conn)
     {
       assert(conn);
@@ -399,7 +333,7 @@ namespace nexus::quic
       auto &c = accepting_connections.front();
       list_transfer(c, accepting_connections, open_connections);
 
-      connection_state::on_accept(c.state, incoming_connection{conn,engine.max_streams_per_connection} );
+      connection_state::on_accept(c.state, incoming_connection{conn, engine.max_streams_per_connection});
       return &c;
     }
 
@@ -435,8 +369,6 @@ namespace nexus::quic
       // send any CONNECTION_CLOSE frames before closing the socket
       engine.process(lock);
       receiving = false;
-      //  socket.close();
-      // SockToPtr()->close();
 
       if (auto usock = std::get_if<udp::socket>(&socket))
       {
@@ -505,7 +437,6 @@ namespace nexus::quic
     void socket_impl::on_readable()
     {
       std::array<unsigned char, 4096> buffer;
-    
 
       error_code ec;
       for (;;)
@@ -530,7 +461,6 @@ namespace nexus::quic
 
         auto lock = std::unique_lock{engine.mutex};
         const auto peer_ctx = this;
-        //  qDebug("packet in :) ");
         ::lsquic_engine_packet_in(engine.handle.get(),
                                   (const uint8_t *)iov.iov_base,
                                   bytes,
@@ -547,10 +477,10 @@ namespace nexus::quic
       ::lsquic_engine_send_unsent_packets(engine.handle.get());
     }
 
-/*!
- \brief internal implementation of 
- int engine_impl::send_packets(const lsquic_out_spec* specs, unsigned n_specs)
-*/
+    /*!
+     \brief internal implementation of
+     int engine_impl::send_packets(const lsquic_out_spec* specs, unsigned n_specs)
+    */
 
     auto socket_impl::send_packets(const lsquic_out_spec *begin,
                                    const lsquic_out_spec *end,
@@ -616,24 +546,14 @@ namespace nexus::quic
         {
           int nhandle = psock->native_handle();
 
-        
-
-
           auto endp = psock->local_endpoint();
           msg.msg_name = const_cast<void *>(static_cast<const void *>(endp.data()));
 
-          msg.msg_namelen = endp.size(); // sizeof(struct sockaddr_in);
-
-          if (msg.msg_iovlen > 1)
-          {
-            std::cout << "msg_iovlen: " << msg.msg_iovlen << " in send_packets()" << std::endl;
-          }
+          msg.msg_namelen = endp.size();
 
           if (is_server())
           {
             //  add proxy header expected by ListenSockAdapter
-
-            // assert( *p->dest_sa == *m_fake_endp.data()  );
 
             std::array<char, 32> proxy_hdr_buff;
             iovec prepended_hdr;
@@ -641,7 +561,7 @@ namespace nexus::quic
             prepended_hdr.iov_len = 32;
 
             auto scion_remote = addrMapper::instance().lookupHash(*p->dest_sa);
-            makeProxyHeader( proxy_hdr_buff.data(), **scion_remote); // might throw bad optional access
+            makeProxyHeader(proxy_hdr_buff.data(), **scion_remote);
 
             std::vector<iovec> io(p->iovlen + 1);
             io[0] = prepended_hdr;
@@ -653,31 +573,18 @@ namespace nexus::quic
             msg.msg_iov = io.data();    // p->iov;
             msg.msg_iovlen = io.size(); // p->iovlen;
 
-        //    qDebug("lookup scion_remote: " << (*scion_remote)->toString());
+            //    qDebug("lookup scion_remote: " << (*scion_remote)->toString());
 
-          
             auto new_len = msg.msg_iov->iov_len + 32;
-          
-
-            
-
-         //   std::memcpy(buff.data() + 32, msg.msg_iov->iov_base, msg.msg_iov->iov_len);
-
-        //    msg.msg_iov->iov_base = buff.data();
-        //    msg.msg_iov->iov_len = new_len;
-            // msg.msg_iovlen = new_len;
-
-        
 
             qDebug(" send: " << new_len << " bytes");
             // auto sock_endp =  asio::local::datagram_protocol::endpoint(m_go_path);
             //  err_send = send(nhandle, msg.msg_iov, msg.msg_iov->iov_len , 0);
 
-          //  err_send = ::sendmsg(nhandle, &msg, MSG_DONTWAIT );           // operation not permitted !!
-            //err_send = send(nhandle, buff.data(), new_len, 0);
+            //  err_send = ::sendmsg(nhandle, &msg, MSG_DONTWAIT );           // operation not permitted !!
+            // err_send = send(nhandle, buff.data(), new_len, 0);
 
-            err_send = writev( nhandle,msg.msg_iov, msg.msg_iovlen );
-
+            err_send = writev(nhandle, msg.msg_iov, msg.msg_iovlen);
           }
           else if (is_client())
           {
@@ -685,7 +592,7 @@ namespace nexus::quic
 
             auto payload_len = msg.msg_iov->iov_len;
             qDebug("send: " << payload_len << " bytes");
-             err_send = send(nhandle, msg.msg_iov->iov_base, payload_len, 0);
+            err_send = send(nhandle, msg.msg_iov->iov_base, payload_len, 0);
             // err_send = ::sendmsg(nhandle, &msg, MSG_DONTWAIT );
           }
         }
@@ -739,7 +646,7 @@ namespace nexus::quic
     constexpr size_t dstaddr_size = std::max(dstaddr4_size, sizeof(in6_pktinfo));
     constexpr size_t max_control_size = CMSG_SPACE(ecn_size) + CMSG_SPACE(dstaddr_size);
 
-    size_t socket_impl::recv_packet(iovec& iov, udp::endpoint &peer,
+    size_t socket_impl::recv_packet(iovec &iov, udp::endpoint &peer,
                                     sockaddr_union &self, int &ecn,
                                     error_code &ec)
     {
@@ -786,13 +693,12 @@ namespace nexus::quic
 
             auto payload_len = std::max(bytes - 32, 0);
             iov.iov_len = payload_len;
-            if(payload_len)
+            if (payload_len)
             { // iov.iov_base += 32;
 
-              iov.iov_base = (void*)( ((uint8_t*)iov.iov_base) +32) ;
-
+              iov.iov_base = (void *)(((uint8_t *)iov.iov_base) + 32);
             }
-          
+
             bytes = payload_len;
           }
         }
