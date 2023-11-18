@@ -48,7 +48,13 @@ add_library(nexus ${nexus-srcs})
 #	target_compile_definitions( nexus PUBLIC BOOST_ASIO_ENABLE_HANDLER_TRACKING )
 #endif()
 
-target_link_libraries(nexus PUBLIC nexus-headers lsquic pancpp pan::pan sha3
+set(NEXUS_DEPS
+	nexus-headers lsquic pancpp pan::pan )
+if(ENABLE_SCION_IPv6)
+list(APPEND NEXUS_DEPS sha3)
+endif()
+
+target_link_libraries(nexus PUBLIC ${NEXUS_DEPS}
 ${Boost_LIBRARIES}
 Boost::system
 Boost::thread

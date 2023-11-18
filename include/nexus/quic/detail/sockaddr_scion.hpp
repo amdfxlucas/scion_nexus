@@ -2,19 +2,23 @@
 
 #include <boost/asio.hpp>
 #include "nexus/quic/detail/scion-utils.h"
+#ifdef ENABLE_SCION_IPv6
 #include "sha3/Keccak.h"
 #include "sha3/Hex.h"
 #include "sha3/HashFunction.h"
+#endif
 
 
-#define AF_SCION 47  // one more than AF_MAX
+
 
 inline bool operator==( const sockaddr& x, const sockaddr& y)
 {
     return x.sa_family == y.sa_family && std::ranges::equal(y.sa_data,x.sa_data);
 }
 
-/* read scion address might look something like:
+/* real scion address might look something like:
+
+
   struct sockaddr_scion
   {
     __SOCKADDR_COMMON (scion_)=AF_SCION;
@@ -127,6 +131,99 @@ inline void makeProxyHeader( char* buffer, const ScionUDPAddr& addr )
 
 }
 
+
+inline ScionUDPAddr sockaddr2Scion( const sockaddr& addr )
+{
+    ScionUDPAddr scion;
+    std::array<unsigned char,4> _ip;
+
+    ((uint8_t*)(&scion.port))[0] = addr.sa_data[0] ;
+    ((uint8_t*)(&scion.port))[1] = addr.sa_data[1];
+
+    ((uint8_t*)(&scion.ia))[0] = addr.sa_data[2];
+    ((uint8_t*)(&scion.ia))[1] = addr.sa_data[3] ;
+    ((uint8_t*)(&scion.ia))[2] = addr.sa_data[4] ;    
+    ((uint8_t*)(&scion.ia))[3] = addr.sa_data[5] ;
+    ((uint8_t*)(&scion.ia))[4]= addr.sa_data[6] ;
+    ((uint8_t*)(&scion.ia))[5] = addr.sa_data[7] ;
+    ((uint8_t*)(&scion.ia))[6] = addr.sa_data[8] ;
+    ((uint8_t*)(&scion.ia))[7] = addr.sa_data[9] ;
+
+      _ip[0] = addr.sa_data[10] ;
+         _ip[1] = addr.sa_data[11] ;
+        _ip[2] = addr.sa_data[12] ;
+        _ip[3] = addr.sa_data[13] ;
+
+    scion.ip = boost::asio::ip::address_v4(_ip);
+
+    return scion;
+}
+
+/* fits a scion address with an IPv4 host part into a sockaddr struct (lossless)
+*/
+inline sockaddr scion2Sockaddr( uint64_t ia, uint16_t port,
+                     const boost::asio::ip::address & host )
+{
+    sockaddr addr{.sa_family = AF_INET };
+
+    addr.sa_data[0] = ((uint8_t*)(&port))[0];
+    addr.sa_data[1] = ((uint8_t*)(&port))[1];
+
+    addr.sa_data[2] = ((uint8_t*)(&ia))[0];
+    addr.sa_data[3] = ((uint8_t*)(&ia))[1];
+    addr.sa_data[4] = ((uint8_t*)(&ia))[2];    
+    addr.sa_data[5] = ((uint8_t*)(&ia))[3];
+    addr.sa_data[6] = ((uint8_t*)(&ia))[4];
+    addr.sa_data[7] = ((uint8_t*)(&ia))[5];
+    addr.sa_data[8] = ((uint8_t*)(&ia))[6];
+    addr.sa_data[9] = ((uint8_t*)(&ia))[7];
+
+    if(host.is_v4() )
+    {   auto ip = host.to_v4().to_bytes();
+        addr.sa_data[10] = ip[0];
+        addr.sa_data[11] = ip[1];
+        addr.sa_data[12] = ip[2];
+        addr.sa_data[13] = ip[3];
+    } else
+    {
+        //  cant fit 16 byte IPv6 address in remaining 4 byte storage
+        throw std::runtime_error( "unsupported operation: scion address with IPv6 host part ");
+    }
+
+    return addr;
+}
+
+
+inline sockaddr scion2Sockaddr(const ScionUDPAddr& add )
+{
+    return scion2Sockaddr( add.getIA(), add.port,add.ip);
+}
+
+
+
+  inline constexpr std::string sockaddr2str( const sockaddr& add )
+  {
+    return std::format( "{}-{}" , add.sa_family, std::string_view(add.sa_data,14) );
+  }
+
+namespace std {
+  template <> struct hash<sockaddr>
+  {
+    size_t operator()(const sockaddr & x) const
+    {
+      return std::hash<std::string>()( sockaddr2str(x)  );
+    }
+  };
+}
+
+#ifdef ENABLE_SCION_IPv6
+inline sockaddr hashSockaddr( const Pan::udp::Endpoint& endpoint )
+{  
+    return hashSockaddr(endpoint.toString());
+ // return scion2Sockaddr(endpoint.getIA(), endpoint.getPort() , endpoint.getIP() );
+}
+
+
 /*!
     \brief 
     \details as long as there is no Kernel support for scion
@@ -137,9 +234,9 @@ inline void makeProxyHeader( char* buffer, const ScionUDPAddr& addr )
  \param addr_str  string representation of an address
                 with arbitrary length
  i.e. scion address: 
-  "19-ffaa:1:1067,192.168.2.222:5555"
+  "19-ffaa:1:1067,192.168.2.222:5555"  17-ffaa:1:fe4,[2001:db8:0:1:1:1:1:1]:53
   \returns a unix sockaddr struct whose  'char sa_data[14]'
-            array is filled with the 14 byte Shake hash of the passed address
+            array is filled with the 14 byte Shake-hash of the passed address
 */
 
   inline sockaddr hashSockaddr( const std::string& addr_str,
@@ -177,62 +274,6 @@ inline void makeProxyHeader( char* buffer, const ScionUDPAddr& addr )
     return addr;
   }
 
-/* fits a scion address with an IPv4 host part into a sockaddr struct (lossless)
-*/
-inline sockaddr scion2Sockaddr( uint64_t ia, uint16_t port,
-                     const boost::asio::ip::address & host )
-{
-    sockaddr addr{.sa_family = AF_INET };
-
-    addr.sa_data[0] = ((uint8_t*)(&port))[0];
-    addr.sa_data[1] = ((uint8_t*)(&port))[1];
-
-    addr.sa_data[2] = ((uint8_t*)(&ia))[0];
-    addr.sa_data[3] = ((uint8_t*)(&ia))[1];
-    addr.sa_data[4] = ((uint8_t*)(&ia))[2];    
-    addr.sa_data[5] = ((uint8_t*)(&ia))[3];
-    addr.sa_data[6] = ((uint8_t*)(&ia))[4];
-    addr.sa_data[7] = ((uint8_t*)(&ia))[5];
-    addr.sa_data[8] = ((uint8_t*)(&ia))[6];
-    addr.sa_data[9] = ((uint8_t*)(&ia))[7];
-
-    if(host.is_v4() )
-    {   auto ip = host.to_v4().to_bytes();
-        addr.sa_data[10] = ip[0];
-        addr.sa_data[11] = ip[1];
-        addr.sa_data[12] = ip[2];
-        addr.sa_data[13] = ip[3];
-    } else
-    {
-        //  cant fit 16 byte IPv6 address in remaining 4 byte storage
-        throw std::runtime_error( "unsupported operation: scion address with IPv6 host part ");
-    }
-
-    return addr;
-}
-
-inline sockaddr hashSockaddr( const Pan::udp::Endpoint& endpoint )
-{
-   // if you want to support IPv6 host parts 
-  //  return hashSockaddr(endpoint.toString());
-  return scion2Sockaddr(endpoint.getIA(), endpoint.getPort() , endpoint.getIP() );
-}
-
-
-  std::string sockaddr2str( const sockaddr& add )
-  {
-    return std::format( "{}-{}" , add.sa_family, std::string_view(add.sa_data,14) );
-  }
-
-namespace std {
-  template <> struct hash<sockaddr>
-  {
-    size_t operator()(const sockaddr & x) const
-    {
-      return std::hash<std::string>()( sockaddr2str(x)  );
-    }
-  };
-}
 
   class addrMapper
   {
@@ -269,5 +310,6 @@ private:
     std::unordered_map<sockaddr, ScionUDPAddr> m_map;
 
   };
+  #endif
 
 

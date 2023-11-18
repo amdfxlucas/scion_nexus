@@ -223,15 +223,21 @@ namespace nexus::quic
 
       [&]()
       {
-        auto remote = ScionUDPAddr(endpoint.toString());
-        qDebug("connect remote: " << remote.toString());
+        auto remote = ScionUDPAddr(endpoint.toString());        
 
+        #ifdef SCION_ENABLE_IPV6
+        // if you dont like the fixed fake address trick
+        // (theoretically packets from any source could be received )
         // sockaddr hash = hashSockaddr(endpoint);
         //  addrMapper::instance().insertMapping(hash, remote);
-
-        addrMapper::instance().insertMapping(*reinterpret_cast<const sockaddr *>(m_fake_endp.data()), remote);
-
+        // connect_impl(c, &hash, hostname );
+        addrMapper::instance().insertMapping(m_fake_endp), remote);
         connect_impl(c, m_fake_endp.data(), hostname);
+        #else
+        auto add = scion2Sockaddr(remote);
+        m_fake_endp = add;
+        connect_impl(c, &add,hostname );
+        #endif
       }();
     }
 
@@ -559,9 +565,14 @@ namespace nexus::quic
             iovec prepended_hdr;
             prepended_hdr.iov_base = proxy_hdr_buff.data();
             prepended_hdr.iov_len = 32;
-
+            #ifdef ENABLE_SCION_IPv6
             auto scion_remote = addrMapper::instance().lookupHash(*p->dest_sa);
             makeProxyHeader(proxy_hdr_buff.data(), **scion_remote);
+            #else
+            auto scion_remote = sockaddr2Scion(*p->dest_sa);
+            makeProxyHeader(proxy_hdr_buff.data(), scion_remote);
+            #endif 
+            
 
             std::vector<iovec> io(p->iovlen + 1);
             io[0] = prepended_hdr;
@@ -588,7 +599,7 @@ namespace nexus::quic
           }
           else if (is_client())
           {
-            assert(*p->dest_sa == *m_fake_endp.data());
+            assert(*p->dest_sa == m_fake_endp);
 
             auto payload_len = msg.msg_iov->iov_len;
             qDebug("send: " << payload_len << " bytes");
@@ -681,21 +692,20 @@ namespace nexus::quic
           {
             qDebug("received " << bytes << " bytes");
 
-            ScionUDPAddr addr = parseProxyHeader((const char *)iov.iov_base, bytes);
-            auto addr_str = addr.toString();
-            // qDebug("parsed remote from: " << addr_str);
-
-            sockaddr ad = hashSockaddr(addr_str);
+            ScionUDPAddr addr = parseProxyHeader((const char *)iov.iov_base, bytes);            
+            #ifdef ENABLE_SCION_IPv6            
+            sockaddr ad = hashSockaddr(addr);
             addrMapper::instance().insertMapping(ad, addr);
-            *peer.data() = ad;
+            #else
+            sockaddr ad = scion2Sockaddr( addr );
+            #endif
 
-            // *peer.data() = *m_fake_endp.data();
+            *peer.data() = ad;
 
             auto payload_len = std::max(bytes - 32, 0);
             iov.iov_len = payload_len;
             if (payload_len)
-            { // iov.iov_base += 32;
-
+            { 
               iov.iov_base = (void *)(((uint8_t *)iov.iov_base) + 32);
             }
 
@@ -704,12 +714,15 @@ namespace nexus::quic
         }
         else if (is_client())
         {
+          // the ConnSockAdapter doesnt add a proxyHeader,
+          // so there is no way of knowing who actually the received packet is from here
+          // pan.dialedConn is  a udp socket and NOT connected
           bytes = recv(nhandle, msg.msg_iov->iov_base, msg.msg_iov->iov_len, 0);
           if (bytes > 0)
           {
             qDebug("received " << bytes << " bytes");
             iov.iov_len = bytes;
-            *peer.data() = *m_fake_endp.data();
+            *peer.data() = m_fake_endp;
           }
         }
       }

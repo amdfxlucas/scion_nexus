@@ -185,11 +185,16 @@ struct socket_impl : boost::intrusive::list_base_hook<> {
                      int& ecn, error_code& ec);
 
 private:
-// this address is presented to the lsquic engine as its remote peer's address
-// for packets which are received through the unix domain socket
-// it is important that this is the same address, that connect_impl was called with
-inline const static udp::endpoint m_fake_endp 
+/* for clients this address is presented to the lsquic engine as its remote peer's address
+ for packets which are received through the unix domain socket.
+ It is important that this is the same address, that connect_impl was called with
+ This is a workaround because the Pan ConnSockAdapter does not add a proxy-header
+ containing the real source address of the packet.
+ */
+
+inline const static udp::endpoint m_fake 
 = udp::endpoint{ boost::asio::ip::address::from_string("127.0.0.1"), 5555};
+inline static sockaddr m_fake_endp = *m_fake.data();
 };
 
 } // namespace nexus::quic::detail
