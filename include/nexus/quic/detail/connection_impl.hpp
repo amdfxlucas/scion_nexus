@@ -33,9 +33,10 @@ struct connection_impl : public connection_context,
   udp::endpoint remote_endpoint(error_code& ec) const;
 
   void connect(stream_connect_operation& op);
-  stream_impl* on_connect(lsquic_stream* stream);
+  stream_impl* on_connect(lsquic_stream* stream); 
 
   template <typename Stream, typename CompletionToken>
+  requires requires { std::is_invocable_v<CompletionToken,error_code>; }
   decltype(auto) async_connect(Stream& stream, CompletionToken&& token) {
     auto& s = stream.impl;
     return boost::asio::async_initiate<CompletionToken, void(error_code)>(
@@ -44,6 +45,8 @@ struct connection_impl : public connection_context,
           using op_type = stream_connect_async<Handler, executor_type>;
           auto p = handler_allocate<op_type>(h, std::move(h), get_executor(), s);
           auto op = handler_ptr<op_type, Handler>{p, &p->handler};
+
+          // precondition: this->state must be 'open' for connect to succeede
           connect(*op);
           op.release(); // release ownership
         }, token);
@@ -53,6 +56,7 @@ struct connection_impl : public connection_context,
   stream_impl* on_accept(lsquic_stream* stream);
 
   template <typename Stream, typename CompletionToken>
+  requires requires { std::is_invocable_v<CompletionToken,error_code>; }
   decltype(auto) async_accept(Stream& stream, CompletionToken&& token) {
     auto& s = stream.impl;
     return boost::asio::async_initiate<CompletionToken, void(error_code)>(

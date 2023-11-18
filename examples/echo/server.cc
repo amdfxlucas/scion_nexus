@@ -10,6 +10,8 @@
 #include <nexus/quic/server.hpp>
 #include <nexus/quic/settings.hpp>
 #include <nexus/quic/stream.hpp>
+#include <ranges>
+#include <iterator>
 
 // echo server that accepts connections and their streams, writing back
 // anything it reads on each stream
@@ -20,6 +22,7 @@ struct configuration {
   const char* hostname;
   const char* portstr;
   std::string cert;
+  std::string scion;
   std::string key;
   std::optional<uint32_t> max_streams;
 };
@@ -27,7 +30,7 @@ struct configuration {
 configuration parse_args(int argc, char** argv)
 {
   if (argc < 5) {
-    std::cerr << "Usage: " << argv[0] << " <hostname> <port> <certificate> <private key> [max-streams]\n";
+    std::cerr << "Usage: " << argv[0] << " <hostname> <port> <certificate> <private key> <scion> [max-streams]\n";
     ::exit(EXIT_FAILURE);
   }
   configuration config;
@@ -35,8 +38,9 @@ configuration parse_args(int argc, char** argv)
   config.portstr = argv[2];
   config.cert = argv[3];
   config.key = argv[4];
-  if (argc > 5) { // parse max-streams
-    const auto begin = argv[5];
+  config.scion = argv[5];
+  if (argc > 6) { // parse max-streams
+    const auto begin = argv[6];
     const auto end = begin + strlen(begin);
     uint32_t value;
     const auto result = std::from_chars(begin, end, value);
@@ -61,9 +65,11 @@ int alpn_select_cb(SSL* ssl, const unsigned char** out, unsigned char* outlen,
   int r = ::SSL_select_next_proto(const_cast<unsigned char**>(out), outlen,
                                   const_cast<unsigned char*>(in), inlen,
                                   alpn, sizeof(alpn));
-  if (r == OPENSSL_NPN_NEGOTIATED) {
+   if (r == OPENSSL_NPN_NEGOTIATED) {
+    std::cerr << "alpn negotiation successfull !" << std::endl;
     return SSL_TLSEXT_ERR_OK;
   } else {
+    std::cerr << "alpn negotiation failed!" << std::endl;
     return SSL_TLSEXT_ERR_ALERT_FATAL;
   }
 }
@@ -74,8 +80,8 @@ using ref_counter = boost::intrusive_ref_counter<T, boost::thread_unsafe_counter
 struct echo_connection : ref_counter<echo_connection> {
   nexus::quic::connection conn;
 
-  explicit echo_connection(nexus::quic::acceptor& acceptor)
-      : conn(acceptor) {}
+  explicit echo_connection(nexus::quic::acceptor* acceptor)
+      : conn(*acceptor) {}
   ~echo_connection() {
     std::cerr << "connection closed\n";
   }
@@ -95,35 +101,53 @@ void on_stream_write(std::unique_ptr<echo_stream> s,
                      error_code ec, size_t bytes);
 
 void on_stream_read(std::unique_ptr<echo_stream> s,
-                    error_code ec, size_t bytes)
+                    error_code ec, size_t bytes_read)
 {
   auto& stream = s->stream;
-  if (ec == nexus::quic::stream_error::eof) {
+  
+  if( bytes_read == 0 && ec.value() == 0) // success
+  { ec = nexus::quic::stream_error::eof;
+     std::cout << "NO BYTES READ FROM STREAM err: "
+     <<ec.message() << " close stream" << std::endl; 
+     
+  }
+  if (ec == nexus::quic::stream_error::eof )
+   {
     // done reading and all writes were submitted, wait for the acks and shut
     // down gracefully
+    std::cout << "about to close stream" << std::endl;
     stream.async_close([s=std::move(s)] (error_code ec) {
         if (ec) {
-          std::cerr << "stream close failed with " << ec.message() << '\n';
+          std::cout << "stream close failed with " << ec.message() << '\n';
         } else {
-          std::cerr << "stream closed\n";
+          std::cout << "stream closed\n";
         }
       });
     return;
   }
   if (ec) {
     std::cerr << "read failed with " << ec.message() << '\n';
-    return;
+    return;  
   }
+
+     std::cout <<"stream read: " << bytes_read<<  " \n" ;
+      std::ranges::copy(  s->buffer|std::ranges::views::take(bytes_read) ,
+      std::ostream_iterator<char>(std::cout, "") );
+      std::cout << std::endl;
+
+
   // echo the buffer back to the client
   auto& data = s->buffer;
-  boost::asio::async_write(stream, boost::asio::buffer(data.data(), bytes),
-    [s=std::move(s)] (error_code ec, size_t bytes) mutable {
-      on_stream_write(std::move(s), ec, bytes);
+  boost::asio::async_write(stream, boost::asio::buffer(data.data(), bytes_read),
+                                  boost::asio::transfer_at_least(1),
+    [s=std::move(s)] (error_code ec, size_t bytes_written) mutable {
+
+      on_stream_write(std::move(s), ec, bytes_written);
     });
 }
 
 void on_stream_write(std::unique_ptr<echo_stream> s,
-                     error_code ec, size_t bytes)
+                     error_code ec, size_t bytes_written)
 {
   if (ec) {
     std::cerr << "write failed with " << ec.message() << '\n';
@@ -132,9 +156,18 @@ void on_stream_write(std::unique_ptr<echo_stream> s,
   // read the next buffer from the client
   auto& stream = s->stream;
   auto& data = s->buffer;
-  stream.async_read_some(boost::asio::buffer(data),
-    [s=std::move(s)] (error_code ec, size_t bytes) mutable {
-      on_stream_read(std::move(s), ec, bytes);
+  stream.async_read_some( boost::asio::buffer(data.data(),bytes_written ), // boost::asio::buffer(data),
+                        //  boost::asio::transfer_at_least(1),
+    [s=std::move(s)] (error_code ec, size_t bytes_read) mutable {
+
+
+    /*  if(bytes_read == 0)
+      {
+        std::cout << "NOTHING TO READ ON STREAM err_code: "
+         <<  ec<<" " << ec.message() << std::endl;
+      } */
+
+      on_stream_read(std::move(s), ec, bytes_read);
     });
 }
 
@@ -149,10 +182,10 @@ void accept_streams(connection_ptr c)
         std::cerr << "stream accept failed with " << ec.message() << '\n';
         return;
       }
+      
       // start next accept
       accept_streams(std::move(c));
-      // start reading from stream
-      std::cerr << "new stream\n";
+      // start reading from stream     
       auto& stream = s->stream;
       auto& data = s->buffer;
       stream.async_read_some(boost::asio::buffer(data),
@@ -163,18 +196,19 @@ void accept_streams(connection_ptr c)
 }
 
 void accept_connections(nexus::quic::server& server,
-                        nexus::quic::acceptor& acceptor)
+                        nexus::quic::acceptor* acceptor)
 {
   auto conn = connection_ptr{new echo_connection(acceptor)};
   auto& c = conn->conn;
-  acceptor.async_accept(c,
-    [&server, &acceptor, conn=std::move(conn)] (error_code ec) {
+  acceptor->async_accept(c,
+    [&server, acceptor, conn=std::move(conn)] (error_code ec) {
       if (ec) {
         std::cerr << "accept failed with " << ec.message()
             << ", shutting down\n";
         server.close();
         return;
       }
+      std::cout << "start next accept ..." << std::endl;
       // start next accept
       accept_connections(server, acceptor);
       std::cerr << "new connection\n";
@@ -196,24 +230,56 @@ int main(int argc, char** argv)
       return resolver.resolve(cfg.hostname, cfg.portstr)->endpoint();
     }();
 
+    std::cout <<"server listening on: " <<
+   endpoint.address().to_string() +" : " << cfg.portstr <<std::endl;
+
   auto ssl = boost::asio::ssl::context{boost::asio::ssl::context::tlsv13};
   ::SSL_CTX_set_min_proto_version(ssl.native_handle(), TLS1_3_VERSION);
   ::SSL_CTX_set_max_proto_version(ssl.native_handle(), TLS1_3_VERSION);
   ::SSL_CTX_set_alpn_select_cb(ssl.native_handle(), alpn_select_cb, nullptr);
 
-  ssl.use_certificate_chain_file(cfg.cert);
-  ssl.use_private_key_file(cfg.key, boost::asio::ssl::context::file_format::pem);
+  if(!cfg.cert.empty())
+    ssl.use_certificate_chain_file(cfg.cert);
+  if(!cfg.key.empty() )
+    ssl.use_private_key_file(cfg.key, boost::asio::ssl::context::file_format::pem);
+  
+  if(cfg.cert.empty() && cfg.key.empty() )
+  {  ssl.set_verify_mode( boost::asio::ssl::verify_none );
+  std::cerr << "ssl verification disabled because no cert and key were specified" << std::endl;
+  }
+
+  ssl.set_verify_callback([](
+                              bool preverified,              // True if the certificate passed pre-verification.
+                              boost::asio::ssl::verify_context &ctx // The peer certificate and other context.
+                          )
+                          {
+  std::cout << "client cert successfully verified!" << std::endl;
+   return true; });
 
   auto global = nexus::global::init_server();
+  #ifdef LSQUIC_LOG
+  global.log_to_stderr( LSQUIC_LOG_LVL );
+  #endif
+
+
   auto settings = nexus::quic::default_server_settings();
   if (cfg.max_streams) {
     settings.max_streams_per_connection = *cfg.max_streams;
   }
   auto server = nexus::quic::server{ex, settings};
-  auto acceptor = nexus::quic::acceptor{server, endpoint, ssl};
-  acceptor.listen(16);
+  std::shared_ptr<nexus::quic::acceptor> acceptor;
+  if(cfg.scion=="false")
+  { acceptor = std::make_shared<nexus::quic::acceptor>(server, endpoint, ssl );
+  }
+  else
+  {
+  acceptor =std::dynamic_pointer_cast<nexus::quic::acceptor>(
+   std::make_shared<nexus::quic::scion_acceptor>(server, endpoint, ssl )
+   );
+  }
+  acceptor->listen(16);
 
-  accept_connections(server, acceptor);
+  accept_connections(server, acceptor.get() );
   context.run();
   return 0;
 }

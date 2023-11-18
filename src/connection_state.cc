@@ -1,4 +1,6 @@
+
 #include <nexus/quic/detail/connection_state.hpp>
+#include <nexus/quic/detail/quic-debug.hpp>
 #include <lsquic.h>
 
 namespace nexus::quic::detail {
@@ -58,17 +60,27 @@ udp::endpoint remote_endpoint(const variant& state, error_code& ec)
   return remote;
 }
 
-void on_connect(variant& state, lsquic_conn* handle)
-{
-  assert(handle);
+/*!
+  \brief internal implementation of
+  socket_impl::on_connect(connection_impl &c, lsquic_conn_t *conn)
+  
+  \details precondition: connection_state must be 'closed' and gets transitioned to 'open'
+*/
+void on_connect(variant& state, incoming_connection&& conn )
+{ 
+
+  assert(conn.handle);
   assert(std::holds_alternative<closed>(state));
-  state.emplace<open>(*handle);
+  state.emplace<open>(std::move(conn ));
 }
 
+/*!
+    \brief internal implementation of connection_impl::on_handshake( int status )
+*/
 void on_handshake(variant& state, int status)
 {
   if (status != LSQ_HSK_FAIL && status != LSQ_HSK_RESUMED_FAIL) {
-    return;
+    return; // everything is fine 
   }
   // set a generic connection handshake error. we may get a more specific
   // error from on_connection_close_frame() before on_closed() delivers
@@ -87,28 +99,52 @@ void on_handshake(variant& state, int status)
   }
 }
 
+/*!
+  \brief internal impl of 
+  socket_impl::accept(connection_impl &c, accept_operation &op)
+  \details 
+  precondition: connection_state must be 'closed'
+            and gets transitioned to 'accepting'
+*/
 void accept(variant& state, accept_operation& op)
 {
   assert(std::holds_alternative<closed>(state));
   state = accepting{&op};
 }
 
+/* transit state from closed -> open
+*/
 void accept_incoming(variant& state, incoming_connection&& incoming)
 {
   assert(std::holds_alternative<closed>(state));
   assert(incoming.handle);
-  auto& o = state.emplace<open>(*incoming.handle);
-  o.incoming_streams = std::move(incoming.incoming_streams);
+  state.emplace<open>( std::move( incoming ) );
+
 }
 
-void on_accept(variant& state, lsquic_conn* handle)
+/*!
+transit state from accepting -> open
+*/
+void on_accept(variant& state, incoming_connection&& conn)
 {
-  assert(handle);
+  assert(conn.handle);
   assert(std::holds_alternative<accepting>(state));
   std::get_if<accepting>(&state)->op->defer(error_code{}); // success
-  state.emplace<open>(*handle);
+ state.emplace<open>(std::move(conn));
 }
 
+/*!
+  \brief: internal implementation of 
+void connection_impl::connect(stream_connect_operation& op)
+
+  \details
+precondition: conncetion_state must be 'open'
+
+the stream_connect_operation's stream's stream_state must be 'closed'
+and gets transitioned to -> 'connecting'
+
+the stream_connect_operation's stream is placed in the open-state's connecting_streams queue
+*/
 bool stream_connect(variant& state, stream_connect_operation& op)
 {
   if (std::holds_alternative<error>(state)) {
@@ -129,6 +165,20 @@ bool stream_connect(variant& state, stream_connect_operation& op)
   return true;
 }
 
+/*!
+  \brief: internal implementation of 
+    stream_impl* connection_impl::on_connect(lsquic_stream_t* stream)
+  \details
+precondition: stream_state must be 'open'
+
+            the open state must at least have one 'connecting_stream' in its queue
+
+the open state's first queued connecting_stream  gets moved
+from connecting_streams to open_streams 
+
+the streams state gets transitioned from 'connecting' to -> 'open'
+
+*/
 stream_impl* on_stream_connect(variant& state, lsquic_stream_t* handle,
                                bool is_http)
 {
@@ -141,6 +191,22 @@ stream_impl* on_stream_connect(variant& state, lsquic_stream_t* handle,
   return &s;
 }
 
+
+/*
+precondition: stream_state must be 'open'
+
+IF there are incoming_streams in the open state:
+
+  one incoming_stream is dequeued , transitioned from 'accepting' to 'open'
+  and placed in the open_streams queue
+
+ELSE:
+
+the stream_accept_operation's stream is transitioned from 'closed' to 'accepting'
+and the stream is placed in the open state's accepting_streams queue
+
+
+*/
 void stream_accept(variant& state, stream_accept_operation& op, bool is_http)
 {
   if (std::holds_alternative<error>(state)) {
@@ -171,6 +237,24 @@ void stream_accept(variant& state, stream_accept_operation& op, bool is_http)
   o.accepting_streams.push_back(op.stream);
 }
 
+
+/*!
+  \brief: internal implementation of 
+stream_impl* connection_impl::on_accept(lsquic_stream* stream)
+  \param handle   a stream initiated by the peer
+  \details:
+precondition: connection_state must be 'open'
+
+IF the connection's open state has accepting_streams
+
+  one accepting_stream gets dequeued , transitioned from 'accepting' to -> 'open'
+  and placed in the open_streams queue
+
+ELSE:
+
+  store the stream in the open state's incoming_streams queue
+  or reject & close it, if the incoming_stream queue is already full
+*/
 stream_impl* on_stream_accept(variant& state, lsquic_stream* handle,
                               bool is_http)
 {
@@ -179,6 +263,7 @@ stream_impl* on_stream_accept(variant& state, lsquic_stream* handle,
   if (o.accepting_streams.empty()) {
     // not waiting on accept, try to queue this for later
     if (o.incoming_streams.full()) {
+      assert( o.incoming_initialized );
       ::lsquic_stream_close(handle);
     } else {
       o.incoming_streams.push_back(handle);

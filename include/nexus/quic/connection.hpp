@@ -1,12 +1,14 @@
 #pragma once
 
 #include <nexus/quic/connection_id.hpp>
+#include "pan.hpp"
 #include <nexus/quic/detail/connection_impl.hpp>
 
 namespace nexus::quic {
 
 class acceptor;
 class client;
+class scion_client;
 class stream;
 
 /// a generic QUIC connection that can initiate outgoing streams and accept
@@ -14,6 +16,7 @@ class stream;
 class connection {
   friend class acceptor;
   friend class client;
+  friend class scion_client;
   friend class stream;
   friend class detail::socket_impl;
   detail::connection_impl impl;
@@ -30,7 +33,9 @@ class connection {
   /// open a connection to the given remote endpoint and hostname. this
   /// initiates the TLS handshake, but returns immediately without waiting
   /// for the handshake to complete
-  connection(client& c, const udp::endpoint& endpoint, const char* hostname);
+  connection(client& c, const udp::endpoint& endpoint, const std::string_view& hostname);
+
+  connection(client& c, const Pan::udp::Endpoint& endpoint, const std::string_view& hostname);
 
   /// return the associated io executor
   executor_type get_executor() const;
@@ -50,6 +55,7 @@ class connection {
 
   /// open an outgoing stream
   template <typename CompletionToken> // void(error_code, stream)
+   requires requires { std::is_invocable_v<CompletionToken,error_code,stream>; }
   decltype(auto) async_connect(stream& s, CompletionToken&& token) {
     return impl.async_connect<stream>(s, std::forward<CompletionToken>(token));
   }

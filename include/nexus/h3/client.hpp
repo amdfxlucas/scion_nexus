@@ -91,6 +91,7 @@ class client_connection {
 
   /// open an outgoing stream
   template <typename CompletionToken> // void(error_code)
+   requires requires { std::is_invocable_v<CompletionToken,error_code>; }
   decltype(auto) async_connect(stream& s, CompletionToken&& token) {
     return impl.async_connect<stream>(s, std::forward<CompletionToken>(token));
   }

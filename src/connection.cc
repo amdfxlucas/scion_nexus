@@ -2,6 +2,7 @@
 #include <nexus/quic/client.hpp>
 #include <nexus/quic/server.hpp>
 #include <nexus/quic/stream.hpp>
+#include "tracing.hpp"
 #include <lsquic.h>
 
 namespace nexus::quic {
@@ -10,10 +11,17 @@ connection::connection(acceptor& a) : impl(a.impl) {}
 connection::connection(client& c) : impl(c.socket) {}
 
 connection::connection(client& c, const udp::endpoint& endpoint,
-                       const char* hostname)
+                       const std::string_view& hostname)
     : impl(c.socket)
 {
   c.connect(*this, endpoint, hostname);
+}
+
+connection::connection(client& c, const Pan::udp::Endpoint& endpoint,
+                       const std::string_view& hostname)
+    : impl(c.socket)
+{
+  dynamic_cast<scion_client&>(c).connect(*this, endpoint, hostname);
 }
 
 connection::executor_type connection::get_executor() const
@@ -59,6 +67,7 @@ udp::endpoint connection::remote_endpoint() const
 void connection::connect(stream& s, error_code& ec)
 {
   auto op = detail::stream_connect_sync{s.impl};
+  // precondition: connection_impl::state must be 'open', for connct to succeede
   impl.connect(op);
   op.wait();
   ec = std::get<0>(*op.result);
@@ -125,7 +134,8 @@ connection_impl::connection_impl(socket_impl& socket)
       svc(boost::asio::use_service<service<connection_impl>>(
             boost::asio::query(socket.get_executor(),
                                boost::asio::execution::context))),
-      socket(socket), state(connection_state::closed{})
+      socket(socket),
+      state(connection_state::closed{})
 {
   // register for service_shutdown() notifications
   svc.add(*this);
@@ -167,25 +177,39 @@ udp::endpoint connection_impl::remote_endpoint(error_code& ec) const
   return connection_state::remote_endpoint(state, ec);
 }
 
+/*!
+ \brief: implementation of async_connect()
+*/
 void connection_impl::connect(stream_connect_operation& op)
 {
   auto lock = std::unique_lock{socket.engine.mutex};
+  // precondition: state must be open here, for connect to succeede
   if (connection_state::stream_connect(state, op)) {
     socket.engine.process(lock);
   }
 }
 
+/* 
+called on self-initiated streams by engine_imple::on_new_stream()
+*/
 stream_impl* connection_impl::on_connect(lsquic_stream_t* stream)
 {
   return connection_state::on_stream_connect(state, stream, socket.engine.is_http);
 }
 
+/*!
+ \brief: implementation of async_accept()
+*/
 void connection_impl::accept(stream_accept_operation& op)
 {
   auto lock = std::unique_lock{socket.engine.mutex};
   connection_state::stream_accept(state, op, socket.engine.is_http);
 }
 
+/*!
+  called on peer-initiated streams by engine_impl::on_new_stream()
+  \param stream  a stream initiated by the peer
+*/
 stream_impl* connection_impl::on_accept(lsquic_stream* stream)
 {
   return connection_state::on_stream_accept(state, stream, socket.engine.is_http);
@@ -234,7 +258,7 @@ void connection_impl::on_close()
 }
 
 void connection_impl::on_handshake(int status)
-{
+{  
   connection_state::on_handshake(state, status);
 }
 

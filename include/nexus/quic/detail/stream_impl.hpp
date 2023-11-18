@@ -26,15 +26,18 @@ struct stream_impl : public boost::intrusive::list_base_hook<>,
   stream_state::variant state;
 
   template <typename BufferSequence>
-  static void init_op(const BufferSequence& buffers,
+  static size_t init_op(const BufferSequence& buffers,
                       stream_data_operation& op) {
+    size_t cumm_buff_size = 0;
     const auto end = boost::asio::buffer_sequence_end(buffers);
     for (auto i = boost::asio::buffer_sequence_begin(buffers);
          i != end && op.num_iovs < op.max_iovs;
          ++i, ++op.num_iovs) {
       op.iovs[op.num_iovs].iov_base = const_cast<void*>(i->data());
       op.iovs[op.num_iovs].iov_len = i->size();
+      cumm_buff_size += i->size();
     }
+    return cumm_buff_size;
   }
 
   explicit stream_impl(connection_impl& conn);
@@ -50,6 +53,7 @@ struct stream_impl : public boost::intrusive::list_base_hook<>,
   void read_headers(stream_header_read_operation& op);
 
   template <typename CompletionToken>
+  requires requires { std::is_invocable_v<CompletionToken,error_code>; }
   decltype(auto) async_read_headers(h3::fields& fields,
                                     CompletionToken&& token) {
     return boost::asio::async_initiate<CompletionToken, void(error_code)>(
@@ -68,6 +72,7 @@ struct stream_impl : public boost::intrusive::list_base_hook<>,
   void on_read();
 
   template <typename MutableBufferSequence, typename CompletionToken>
+  requires requires { std::is_invocable_v<CompletionToken,error_code, size_t>; }
   decltype(auto) async_read_some(const MutableBufferSequence& buffers,
                                  CompletionToken&& token) {
     return boost::asio::async_initiate<CompletionToken, void(error_code, size_t)>(
@@ -76,7 +81,8 @@ struct stream_impl : public boost::intrusive::list_base_hook<>,
           using op_type = stream_data_async<Handler, executor_type>;
           auto p = handler_allocate<op_type>(h, std::move(h), get_executor());
           auto op = handler_ptr<op_type, Handler>{p, &p->handler};
-          init_op(buffers, *op);
+          [[maybe_unused]] auto cumm_size = init_op(buffers, *op);
+           // if cumm_size == 0 there is nothing to read
           read_some(*op);
           op.release(); // release ownership
         }, token);
@@ -97,6 +103,7 @@ struct stream_impl : public boost::intrusive::list_base_hook<>,
   void write_headers(stream_header_write_operation& op);
 
   template <typename CompletionToken>
+  requires requires { std::is_invocable_v<CompletionToken,error_code>; }
   decltype(auto) async_write_headers(const h3::fields& fields,
                                      CompletionToken&& token) {
     return boost::asio::async_initiate<CompletionToken, void(error_code)>(
@@ -115,6 +122,7 @@ struct stream_impl : public boost::intrusive::list_base_hook<>,
   void on_write();
 
   template <typename ConstBufferSequence, typename CompletionToken>
+  requires requires { std::is_invocable_v<CompletionToken,error_code, size_t>; }
   decltype(auto) async_write_some(const ConstBufferSequence& buffers,
                                  CompletionToken&& token) {
     return boost::asio::async_initiate<CompletionToken, void(error_code, size_t)>(
@@ -148,6 +156,7 @@ struct stream_impl : public boost::intrusive::list_base_hook<>,
   void on_close();
 
   template <typename CompletionToken>
+  requires requires { std::is_invocable_v<CompletionToken,error_code>; }
   decltype(auto) async_close(CompletionToken&& token) {
     return boost::asio::async_initiate<CompletionToken, void(error_code)>(
         [this] (auto h) {

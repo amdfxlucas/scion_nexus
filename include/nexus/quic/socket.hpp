@@ -6,6 +6,7 @@
 namespace nexus::quic {
 
 // enable the socket options necessary for a quic client or server
-void prepare_socket(udp::socket& sock, bool is_server, error_code& ec);
+template<typename socket_t>
+inline void prepare_socket( socket_t& sock, bool is_server, error_code& ec);
 
 } // namespace nexus::quic

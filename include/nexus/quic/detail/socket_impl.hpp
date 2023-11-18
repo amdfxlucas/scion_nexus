@@ -4,6 +4,11 @@
 #include <boost/circular_buffer.hpp>
 #include <nexus/ssl.hpp>
 #include <nexus/quic/detail/connection_impl.hpp>
+#include <nexus/quic/detail/engine_impl.hpp>
+#include <boost/asio.hpp>
+#include <variant>
+#include "pan.hpp"
+#include <nexus/quic/detail/quic-debug.hpp>
 
 struct lsquic_conn;
 struct lsquic_out_spec;
@@ -19,6 +24,10 @@ union sockaddr_union {
   sockaddr_in addr4;
   sockaddr_in6 addr6;
 };
+
+
+
+ using pan_sock_t = boost::asio::local::datagram_protocol::socket;
 
 using connection_list = boost::intrusive::list<connection_impl>;
 
@@ -36,38 +45,116 @@ inline void list_transfer(connection_impl& s, connection_list& from,
 
 struct socket_impl : boost::intrusive::list_base_hook<> {
   engine_impl& engine;
-  udp::socket socket;
+  std::variant<std::monostate,udp::socket,pan_sock_t> socket; 
+  boost::asio::signal_set m_signals;
+
+  std::shared_ptr<Pan::udp::ListenConn > m_listen_conn;
+  std::shared_ptr<Pan::udp::ListenSockAdapter> m_listen_sock_adapter;
+  std::shared_ptr<Pan::udp::Conn> m_conn;
+  std::shared_ptr<Pan::udp::ConnSockAdapter> m_conn_adapter;
+
+ bool is_server()const { return static_cast<bool>(m_listen_conn); }
+  bool is_client()const {    return  static_cast<bool>(m_conn) ;  }
+
+  /* requirements: close() 
+                      async_wait(wait_type, token)   // /usr/local/include/boost/asio/basic_socket.hpp
+                     boost::asio::ip::udp::endpoint local_endpoint()
+                      native_handle()  // src/socket.cc 
+                      cancel()
+   */
+
+
+
   ssl::context& ssl;
   udp::endpoint local_addr; // socket's bound address
+  /* requirements: data() -> returns asio::basic_endpoint<>::data_type
+                    which is boost::asio::detail::sock_addr_type
+                    which ultimately is a unix    struct sockaddr{ char sa_data[14]; sa_family_t sa_family;}  
+                    (with sa_family_t == unsigned short int )
+  */
+
   boost::circular_buffer<incoming_connection> incoming_connections;
+   // no init to capacity -> this is done in listen( int backlog )
   connection_list accepting_connections;
   connection_list open_connections;
   bool receiving = false;
+  std::string m_go_path;
+  std::string m_path;
 
-  socket_impl(engine_impl& engine, udp::socket&& socket,
-              ssl::context& ssl);
-  socket_impl(engine_impl& engine, const udp::endpoint& endpoint,
-              bool is_server, ssl::context& ssl);
+// for scion_client only ?!
+  socket_impl( engine_impl& e,ssl::context& s )
+  :engine(e),
+  ssl(s) ,
+  m_signals(get_executor(),SIGINT) ,
+  socket(pan_sock_t( e.get_executor()) )
+  {
+     m_signals.async_wait( std::bind(&socket_impl::cancel_on_signal,
+      this, std::placeholders::_1, std::placeholders::_2) );
+  }
+
+// for scion_client and scion_acceptor only
+  socket_impl( engine_impl& e,ssl::context& s , const udp::endpoint& local )
+  :engine(e),
+  ssl(s) ,
+  m_signals(get_executor(),SIGINT),
+  local_addr(local),
+  socket(pan_sock_t( e.get_executor()) )
+   {
+     m_signals.async_wait( std::bind(&socket_impl::cancel_on_signal,
+      this, std::placeholders::_1, std::placeholders::_2) );
+   }
+
+
+  socket_impl(engine_impl& engine, udp::socket&& socket, ssl::context& ssl);
+  socket_impl(engine_impl& engine, pan_sock_t&& socket, ssl::context& ssl, const udp::endpoint& endpoint );
+
+  socket_impl(engine_impl& engine, const udp::endpoint& endpoint,  bool is_server, ssl::context& ssl);
+
   ~socket_impl() {
     close();
   }
+
+  void cancel();
 
   using executor_type = boost::asio::any_io_executor;
   executor_type get_executor() const;
 
   udp::endpoint local_endpoint() const { return local_addr; }
+  std::string local_address()const ;
 
   void listen(int backlog);
 
+  void prepare_scion_server( std::function< void (const boost::system::error_code& err )> on_connected
+              = [](const boost::system::error_code&  ){ qDebug("server unix domain socket connected") ;} 
+              );
+  void prepare_scion_client( const Pan::udp::Endpoint& remote,
+                            std::function< void (const boost::system::error_code& err )> on_connected =
+                             [](const boost::system::error_code&  )
+                             {qDebug( "client unix domain socket connected" ); } 
+                              );
+
   void connect(connection_impl& c,
                const udp::endpoint& endpoint,
-               const char* hostname);
+               const std::string_view& hostname);
+
+  void connect( connection_impl&c ,
+                const Pan::udp::Endpoint& endpoint,
+                const std::string_view& hostname );
+
+                void connect_impl( connection_impl&c ,
+                const sockaddr* endpoint,
+                const std::string_view& hostname );
+
+  void cancel_on_signal( const boost::system::error_code&code, int signal );
+
+
   void on_connect(connection_impl& c, lsquic_conn* conn);
 
   void accept(connection_impl& c, accept_operation& op);
   connection_context* on_accept(lsquic_conn* conn);
 
   template <typename Connection, typename CompletionToken>
+  requires requires { std::is_invocable_v<CompletionToken,error_code>; }
   decltype(auto) async_accept(Connection& conn,
                               CompletionToken&& token) {
     auto& c = conn.impl;
@@ -94,8 +181,20 @@ struct socket_impl : boost::intrusive::list_base_hook<> {
                                       const lsquic_out_spec* end,
                                       error_code& ec);
 
-  size_t recv_packet(iovec iov, udp::endpoint& peer, sockaddr_union& self,
+  size_t recv_packet(iovec& iov, udp::endpoint& peer, sockaddr_union& self,
                      int& ecn, error_code& ec);
+
+private:
+/* for clients this address is presented to the lsquic engine as its remote peer's address
+ for packets which are received through the unix domain socket.
+ It is important that this is the same address, that connect_impl was called with
+ This is a workaround because the Pan ConnSockAdapter does not add a proxy-header
+ containing the real source address of the packet.
+ */
+
+inline const static udp::endpoint m_fake 
+= udp::endpoint{ boost::asio::ip::address::from_string("127.0.0.1"), 5555};
+inline static sockaddr m_fake_endp = *m_fake.data();
 };
 
 } // namespace nexus::quic::detail
