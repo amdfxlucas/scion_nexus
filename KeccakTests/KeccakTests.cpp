@@ -40,4 +40,17 @@ BOOST_AUTO_TEST_CASE(my_boost_test)
 	expected_value = "755c33e0b5aa11f8cf6cc91eaaa2b9cd57e5029b4ed18976d7f619ff9898bd06c5483c82a349ec0cd28793968cb4312c3f240fdcffc49afe06835dc285d2080a";
 	Sha3 h512(512);
 	BOOST_CHECK_EQUAL(hex_encode(raw_data, h512), expected_value);
+
+	Shake shake{16,8};
+	std::cout << hex_encode( raw_data,shake) << std::endl; // '65'
+
+	Shake shake2{32,8};
+	std::cout << hex_encode( raw_data,shake2) << std::endl; // 'a4'
+
+	Shake shake3{64,8};
+	std::cout << hex_encode( raw_data,shake3) << std::endl; // '53'
+
+
+	Shake shake4{64,16};
+	std::cout << hex_encode( raw_data,shake4) << std::endl; // '53e2'
 }
