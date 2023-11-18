@@ -639,7 +639,7 @@ namespace nexus::quic
             // auto sock_endp =  asio::local::datagram_protocol::endpoint(m_go_path);
             //  err_send = send(nhandle, msg.msg_iov, msg.msg_iov->iov_len , 0);
 
-            err_send = ::sendmsg(nhandle, &msg, MSG_DONTWAIT );           // operation not permitted !!
+          //  err_send = ::sendmsg(nhandle, &msg, MSG_DONTWAIT );           // operation not permitted !!
             //err_send = send(nhandle, buff.data(), new_len, 0);
 
             err_send = writev( nhandle,msg.msg_iov, msg.msg_iovlen );

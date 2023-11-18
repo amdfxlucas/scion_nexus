@@ -215,7 +215,9 @@ int main(int argc, char** argv)
   if(ec) throw std::runtime_error("CA file not found");
 
   auto global = nexus::global::init_client();
-  global.log_to_stderr( "debug");
+  #ifdef LSQUIC_LOG
+  global.log_to_stderr( LSQUIC_LOG_LVL );
+  #endif
 
   std::shared_ptr<nexus::quic::client> client;
   connection_ptr conn;

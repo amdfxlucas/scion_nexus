@@ -263,7 +263,11 @@ int main(int argc, char** argv)
    return true; });
 
   auto global = nexus::global::init_server();
-  global.log_to_stderr( "debug");
+  #ifdef LSQUIC_LOG
+  global.log_to_stderr( LSQUIC_LOG_LVL );
+  #endif
+
+
   auto settings = nexus::quic::default_server_settings();
   if (cfg.max_streams) {
     settings.max_streams_per_connection = *cfg.max_streams;
