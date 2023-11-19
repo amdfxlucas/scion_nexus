@@ -1,22 +1,29 @@
 #pragma once
 
 #include <nexus/quic/connection_id.hpp>
-#include "pan.hpp"
 #include <nexus/quic/detail/connection_impl.hpp>
 
+#ifdef ENABLE_SCION
+#include "pan.hpp"
+#endif
 namespace nexus::quic {
 
 class acceptor;
 class client;
-class scion_client;
 class stream;
+
+#ifdef ENABLE_SCION
+class scion_client;
+#endif
 
 /// a generic QUIC connection that can initiate outgoing streams and accept
 /// incoming streams
 class connection {
   friend class acceptor;
-  friend class client;
+  friend class client;  
+  #ifdef ENABLE_SCION
   friend class scion_client;
+  #endif
   friend class stream;
   friend class detail::socket_impl;
   detail::connection_impl impl;
@@ -34,8 +41,9 @@ class connection {
   /// initiates the TLS handshake, but returns immediately without waiting
   /// for the handshake to complete
   connection(client& c, const udp::endpoint& endpoint, const std::string_view& hostname);
-
+  #ifdef ENABLE_SCION
   connection(client& c, const Pan::udp::Endpoint& endpoint, const std::string_view& hostname);
+  #endif
 
   /// return the associated io executor
   executor_type get_executor() const;

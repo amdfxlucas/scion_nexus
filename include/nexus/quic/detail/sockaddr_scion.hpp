@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef ENABLE_SCION
+
 #include <boost/asio.hpp>
 #include "nexus/quic/detail/scion-utils.h"
 #ifdef ENABLE_SCION_IPv6
@@ -313,3 +315,4 @@ private:
   #endif
 
 
+#endif

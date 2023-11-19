@@ -17,12 +17,14 @@ connection::connection(client& c, const udp::endpoint& endpoint,
   c.connect(*this, endpoint, hostname);
 }
 
+#ifdef ENABLE_SCION
 connection::connection(client& c, const Pan::udp::Endpoint& endpoint,
                        const std::string_view& hostname)
     : impl(c.socket)
 {
   dynamic_cast<scion_client&>(c).connect(*this, endpoint, hostname);
 }
+#endif
 
 connection::executor_type connection::get_executor() const
 {

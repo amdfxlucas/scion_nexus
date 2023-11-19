@@ -22,7 +22,7 @@ struct configuration {
   const char* hostname;
   const char* portstr;
   std::string cert;
-  std::string scion;
+  std::string scion{"false"};
   std::string key;
   std::optional<uint32_t> max_streams;
 };
@@ -30,7 +30,7 @@ struct configuration {
 configuration parse_args(int argc, char** argv)
 {
   if (argc < 5) {
-    std::cerr << "Usage: " << argv[0] << " <hostname> <port> <certificate> <private key> <scion> [max-streams]\n";
+    std::cerr << "Usage: " << argv[0] << " <hostname> <port> <certificate> <private key> [<scion>] [max-streams]\n";
     ::exit(EXIT_FAILURE);
   }
   configuration config;
@@ -38,8 +38,15 @@ configuration parse_args(int argc, char** argv)
   config.portstr = argv[2];
   config.cert = argv[3];
   config.key = argv[4];
-  config.scion = argv[5];
-  if (argc > 6) { // parse max-streams
+
+  bool has_scion_arg = false;
+  if( auto scion = std::string_view(argv[5]); scion == "true"|| scion == "false" )
+  { config.scion = argv[5];
+  has_scion_arg = true;
+  }
+
+  // parse max-streams
+  if (argc > (has_scion_arg ? 6 : 5 ) ) { 
     const auto begin = argv[6];
     const auto end = begin + strlen(begin);
     uint32_t value;
@@ -271,12 +278,14 @@ int main(int argc, char** argv)
   if(cfg.scion=="false")
   { acceptor = std::make_shared<nexus::quic::acceptor>(server, endpoint, ssl );
   }
+  #ifdef ENABLE_SCION
   else
   {
   acceptor =std::dynamic_pointer_cast<nexus::quic::acceptor>(
    std::make_shared<nexus::quic::scion_acceptor>(server, endpoint, ssl )
    );
   }
+  #endif
   acceptor->listen(16);
 
   accept_connections(server, acceptor.get() );

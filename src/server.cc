@@ -75,6 +75,7 @@ void acceptor::close()
   impl.close();
 }
 
+#ifdef ENABLE_SCION
  
 /*leave socket variant as empty monostate 
 i can not yet call prepare_scion_XXXX here because i dont know if it is a client or server's socket_impl
@@ -83,38 +84,17 @@ scion_acceptor::scion_acceptor(server& s, const udp::endpoint& local_endpoint, s
 : acceptor( s, ctx,local_endpoint )
 
 {
-
 }
-
-/*
-
-
-scion_acceptor::scion_acceptor(server&s , detail::pan_sock_t&& socket, ssl::context& ctx, const udp::endpoint& endpoint )
-// : impl(s.engine, std::move(socket),ctx, endpoint )
-: acceptor( s,ctx)
-{
-
-}
-
-scion_acceptor::scion_acceptor( server&s , detail::pan_sock_t&& socket, ssl::context& ctx, const udp::endpoint& endpoint )
-: impl( s.engine,socket, ctx, endpoint )
-{
-
-}
-*/
 
 void scion_acceptor::listen(int backlog )
 {
   impl.prepare_scion_server( );
 
-   
-  acceptor::listen(backlog);                  
-                    
-
- // acceptor::listen(backlog);
+  acceptor::listen(backlog);               
+ 
 }
 
-
+#endif
 
 } // namespace quic
 

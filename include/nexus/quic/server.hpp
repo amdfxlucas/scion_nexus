@@ -92,7 +92,7 @@ class acceptor {
 {}
 };
 
-
+#ifdef ENABLE_SCION
 class scion_acceptor : public acceptor{
 
  public:
@@ -103,12 +103,6 @@ class scion_acceptor : public acceptor{
 
   /// construct the acceptor and bind a UDP socket to the given endpoint
   scion_acceptor(server& s, const udp::endpoint& endpoint, ssl::context& ctx);
-
-  /// return the associated io executor
-  //executor_type get_executor() const;
-
-  /// return the socket's locally-bound address/port
-  //udp::endpoint local_endpoint() const;
 
   /// start receiving packets on the socket. incoming connections can be
   /// accepted with accept()/async_accept(). if the queue of unaccepted
@@ -123,19 +117,12 @@ class scion_acceptor : public acceptor{
     return impl.async_accept(conn, std::forward<CompletionToken>(token));
   }
 
-  /// accept an incoming connection whose TLS handshake has completed
-  /// successfully
-  //void accept(connection& conn, error_code& ec);
-  /// \overload
-  //void accept(connection& conn);
-
-  /// close the socket, along with any related connections
-  //void close();
-
   private:
     friend class server;
   friend class connection;
 };
+
+#endif
 
 
 } // namespace nexus::quic

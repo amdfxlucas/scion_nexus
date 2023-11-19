@@ -7,8 +7,11 @@
 #include <nexus/quic/detail/engine_impl.hpp>
 #include <boost/asio.hpp>
 #include <variant>
+
+#ifdef ENABLE_SCION
 #include "pan.hpp"
 #include <nexus/quic/detail/quic-debug.hpp>
+#endif
 
 struct lsquic_conn;
 struct lsquic_out_spec;
@@ -47,7 +50,7 @@ struct socket_impl : boost::intrusive::list_base_hook<> {
   engine_impl& engine;
   std::variant<std::monostate,udp::socket,pan_sock_t> socket; 
   boost::asio::signal_set m_signals;
-
+#ifdef ENABLE_SCION
   std::shared_ptr<Pan::udp::ListenConn > m_listen_conn;
   std::shared_ptr<Pan::udp::ListenSockAdapter> m_listen_sock_adapter;
   std::shared_ptr<Pan::udp::Conn> m_conn;
@@ -55,23 +58,13 @@ struct socket_impl : boost::intrusive::list_base_hook<> {
 
  bool is_server()const { return static_cast<bool>(m_listen_conn); }
   bool is_client()const {    return  static_cast<bool>(m_conn) ;  }
+#endif
 
-  /* requirements: close() 
-                      async_wait(wait_type, token)   // /usr/local/include/boost/asio/basic_socket.hpp
-                     boost::asio::ip::udp::endpoint local_endpoint()
-                      native_handle()  // src/socket.cc 
-                      cancel()
-   */
 
 
 
   ssl::context& ssl;
   udp::endpoint local_addr; // socket's bound address
-  /* requirements: data() -> returns asio::basic_endpoint<>::data_type
-                    which is boost::asio::detail::sock_addr_type
-                    which ultimately is a unix    struct sockaddr{ char sa_data[14]; sa_family_t sa_family;}  
-                    (with sa_family_t == unsigned short int )
-  */
 
   boost::circular_buffer<incoming_connection> incoming_connections;
    // no init to capacity -> this is done in listen( int backlog )
@@ -81,7 +74,7 @@ struct socket_impl : boost::intrusive::list_base_hook<> {
   std::string m_go_path;
   std::string m_path;
 
-// for scion_client only ?!
+// for scion_client and acceptor only
   socket_impl( engine_impl& e,ssl::context& s )
   :engine(e),
   ssl(s) ,
@@ -124,6 +117,7 @@ struct socket_impl : boost::intrusive::list_base_hook<> {
 
   void listen(int backlog);
 
+#ifdef ENABLE_SCION
   void prepare_scion_server( std::function< void (const boost::system::error_code& err )> on_connected
               = [](const boost::system::error_code&  ){ qDebug("server unix domain socket connected") ;} 
               );
@@ -132,18 +126,18 @@ struct socket_impl : boost::intrusive::list_base_hook<> {
                              [](const boost::system::error_code&  )
                              {qDebug( "client unix domain socket connected" ); } 
                               );
+  void connect( connection_impl&c ,
+                const Pan::udp::Endpoint& endpoint,
+                const std::string_view& hostname );
+
+             
+
+#endif                        
 
   void connect(connection_impl& c,
                const udp::endpoint& endpoint,
                const std::string_view& hostname);
 
-  void connect( connection_impl&c ,
-                const Pan::udp::Endpoint& endpoint,
-                const std::string_view& hostname );
-
-                void connect_impl( connection_impl&c ,
-                const sockaddr* endpoint,
-                const std::string_view& hostname );
 
   void cancel_on_signal( const boost::system::error_code&code, int signal );
 
@@ -183,8 +177,12 @@ struct socket_impl : boost::intrusive::list_base_hook<> {
 
   size_t recv_packet(iovec& iov, udp::endpoint& peer, sockaddr_union& self,
                      int& ecn, error_code& ec);
-
 private:
+   void connect_impl( connection_impl&c ,
+                const sockaddr* endpoint,
+                const std::string_view& hostname );
+#ifdef ENABLE_SCION
+
 /* for clients this address is presented to the lsquic engine as its remote peer's address
  for packets which are received through the unix domain socket.
  It is important that this is the same address, that connect_impl was called with
@@ -195,6 +193,7 @@ private:
 inline const static udp::endpoint m_fake 
 = udp::endpoint{ boost::asio::ip::address::from_string("127.0.0.1"), 5555};
 inline static sockaddr m_fake_endp = *m_fake.data();
+#endif
 };
 
 } // namespace nexus::quic::detail

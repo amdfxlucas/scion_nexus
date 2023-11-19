@@ -7,15 +7,15 @@
 
 #include <netinet/ip.h>
 #include <lsquic.h>
-
 #include <cstdlib>
-#include <nexus/quic/detail/sockaddr_scion.hpp>
 #include <iostream>
-// #include <dirent.h>
-// #include <sys/types.h>
+
+#ifdef ENABLE_SCION
+#include <nexus/quic/detail/sockaddr_scion.hpp>
 #include "pan.hpp"
-#include "tracing.hpp"
+
 #include <nexus/quic/detail/quic-debug.hpp>
+#endif
 
 using namespace std;
 
@@ -71,10 +71,12 @@ namespace nexus::quic
       {
         usock->cancel();
       }
+      #ifdef ENABLE_SCION
       else if (auto psock = std::get_if<pan_sock_t>(&socket))
       {
         psock->cancel();
       }
+      #endif
     }
 
     socket_impl::socket_impl(engine_impl &engine, udp::socket &&sock,
@@ -147,6 +149,7 @@ namespace nexus::quic
       return local;
     }
 
+#ifdef ENABLE_SCION
     void socket_impl::prepare_scion_client(
         const Pan::udp::Endpoint &remote,
         std::function<void(const boost::system::error_code &err)> on_connected)
@@ -240,6 +243,7 @@ namespace nexus::quic
         #endif
       }();
     }
+#endif
 
     void socket_impl::connect(connection_impl &c,
                               const udp::endpoint &endpoint,
@@ -380,6 +384,7 @@ namespace nexus::quic
       {
         usock->close();
       }
+      #ifdef ENABLE_SCION
       else if (auto psock = std::get_if<pan_sock_t>(&socket))
       {
         psock->close();
@@ -407,6 +412,7 @@ namespace nexus::quic
         std::remove(m_path.c_str());
       }
       // if(!m_go_path.empty() ){std::remove(m_go_path);}
+      #endif
     }
 
     void socket_impl::start_recv()
@@ -434,10 +440,12 @@ namespace nexus::quic
       {
         usock->async_wait(boost::asio::socket_base::wait_read, cb);
       }
+      #ifdef ENABLE_SCION
       else if (auto psock = std::get_if<pan_sock_t>(&socket))
       {
         psock->async_wait(boost::asio::socket_base::wait_read, cb);
       }
+      #endif
     }
 
     void socket_impl::on_readable()
@@ -548,6 +556,7 @@ namespace nexus::quic
           auto nhandle = usock->native_handle();
           err_send = ::sendmsg(nhandle, &msg, 0);
         }
+        #ifdef ENABLE_SCION
         else if (auto psock = std::get_if<pan_sock_t>(&socket))
         {
           int nhandle = psock->native_handle();
@@ -607,6 +616,7 @@ namespace nexus::quic
             // err_send = ::sendmsg(nhandle, &msg, MSG_DONTWAIT );
           }
         }
+        #endif
 
         // TODO: send all at once with sendmmsg()
         if (err_send == -1)
@@ -634,10 +644,12 @@ namespace nexus::quic
             {
               usock->async_wait(boost::asio::socket_base::wait_write, cb);
             }
+            #ifdef ENABLE_SCION
             else if (auto psock = std::get_if<pan_sock_t>(&socket))
             {
               psock->async_wait(boost::asio::socket_base::wait_write, cb);
             }
+            #endif
 
             errno = ec.value(); // lsquic needs to see this errno
           }
@@ -679,6 +691,7 @@ namespace nexus::quic
         int nhandle = usock->native_handle();
         bytes = ::recvmsg(nhandle, &msg, 0);
       }
+      #ifdef ENABLE_SCION
       else if (auto psock = std::get_if<pan_sock_t>(&socket))
       {
         int nhandle = psock->native_handle();
@@ -726,6 +739,7 @@ namespace nexus::quic
           }
         }
       }
+      #endif
 
       if (bytes == -1)
       {

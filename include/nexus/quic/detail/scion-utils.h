@@ -1,5 +1,6 @@
 
 #pragma once
+#ifdef ENABLE_SCION
 
 #include <arpa/inet.h>
 #include <assert.h>
@@ -338,3 +339,5 @@ inline std::expected<Pan::udp::Endpoint,boost::system::error_code>
         return Pan::udp::Endpoint( reverseEndian(ia), std::move(addr) ,port );
     }
 }
+
+#endif
